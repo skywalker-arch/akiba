@@ -1,0 +1,3 @@
+# akiba
+
+Monorepo workspace scaffold.
