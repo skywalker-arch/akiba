@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  LEFT
+}
+
+enum ContributionStatus {
+  PENDING
+  POSTED
+  REVERSED
+}
+
+enum LoanStatus {
+  REQUESTED
+  APPROVED
+  DISBURSED
+  ACTIVE
+  OVERDUE
+  CLOSED
+  REJECTED
+  DEFAULTED
+}
+
+enum RepaymentStatus {
+  PENDING
+  POSTED
+  REVERSED
+}
+
+enum WalletType {
+  USER
+  GROUP
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER_IN
+  TRANSFER_OUT
+  CONTRIBUTION
+  LOAN_DISBURSEMENT
+  LOAN_REPAYMENT
+  ADJUSTMENT
+  FEE
+  INTEREST
+}
+
+enum TransactionStatus {
+  PENDING
+  POSTED
+  FAILED
+  REVERSED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  phone     String?  @unique
+  firstName String
+  lastName  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdGroups SavingsGroup[]    @relation("GroupCreator")
+  memberships   GroupMembership[]
+  wallets       Wallet[]
+
+  @@index([createdAt])
+}
+
+model SavingsGroup {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User              @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  memberships GroupMembership[]
+  wallets     Wallet[]
+
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+model GroupMembership {
+  id        String           @id @default(uuid())
+  userId    String
+  groupId   String
+  role      MembershipRole   @default(MEMBER)
+  status    MembershipStatus @default(PENDING)
+  joinedAt  DateTime?
+  leftAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  group         SavingsGroup    @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  contributions Contribution[]
+  loans         Loan[]
+  repayments    LoanRepayment[] @relation("RepaymentPayerMembership")
+
+  @@unique([userId, groupId])
+  @@index([groupId, status])
+  @@index([userId, status])
+}
+
+model Contribution {
+  id            String             @id @default(uuid())
+  membershipId  String
+  amount        Decimal            @db.Decimal(18, 2)
+  currency      String             @default("KES")
+  status        ContributionStatus @default(PENDING)
+  contributedAt DateTime
+  reference     String?            @unique
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  membership   GroupMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+
+  @@index([membershipId, contributedAt])
+  @@index([status, contributedAt])
+}
+
+model Loan {
+  id                   String     @id @default(uuid())
+  borrowerMembershipId String
+  principalAmount      Decimal    @db.Decimal(18, 2)
+  interestRate         Decimal    @db.Decimal(5, 2)
+  termMonths           Int
+  purpose              String?
+  disbursedAt          DateTime?
+  dueAt                DateTime?
+  status               LoanStatus @default(REQUESTED)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  borrowerMembership GroupMembership @relation(fields: [borrowerMembershipId], references: [id], onDelete: Restrict)
+  repayments         LoanRepayment[]
+  transactions       Transaction[]
+
+  @@index([borrowerMembershipId, status])
+  @@index([status, createdAt])
+}
+
+model LoanRepayment {
+  id                 String          @id @default(uuid())
+  loanId             String
+  paidByMembershipId String?
+  amount             Decimal         @db.Decimal(18, 2)
+  paidAt             DateTime
+  status             RepaymentStatus @default(PENDING)
+  reference          String?         @unique
+  notes              String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  loan             Loan             @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  paidByMembership GroupMembership? @relation("RepaymentPayerMembership", fields: [paidByMembershipId], references: [id], onDelete: SetNull)
+  transactions     Transaction[]
+
+  @@index([loanId, paidAt])
+  @@index([paidByMembershipId])
+}
+
+model Wallet {
+  id        String     @id @default(uuid())
+  type      WalletType
+  userId    String?
+  groupId   String?
+  currency  String     @default("KES")
+  balance   Decimal    @default(0) @db.Decimal(18, 2)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  group        SavingsGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+
+  @@unique([userId, currency])
+  @@unique([groupId, currency])
+  @@index([type])
+}
+
+model Transaction {
+  id                String            @id @default(uuid())
+  walletId          String
+  contributionId    String?
+  loanId            String?
+  loanRepaymentId   String?
+  type              TransactionType
+  status            TransactionStatus @default(PENDING)
+  amount            Decimal           @db.Decimal(18, 2)
+  currency          String            @default("KES")
+  occurredAt        DateTime
+  description       String?
+  externalReference String?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  wallet        Wallet         @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  contribution  Contribution?  @relation(fields: [contributionId], references: [id], onDelete: SetNull)
+  loan          Loan?          @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  loanRepayment LoanRepayment? @relation(fields: [loanRepaymentId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, occurredAt])
+  @@index([contributionId])
+  @@index([loanId])
+  @@index([loanRepaymentId])
+  @@index([type, status])
+}
