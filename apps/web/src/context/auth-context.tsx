@@ -8,6 +8,7 @@ import {
 type AuthContextValue = {
   token: string | null;
   isAuthenticated: boolean;
+  
   login: (nextToken: string) => void;
   logout: () => void;
 };
