@@ -1,9 +1,8 @@
 # Dependencies
 node_modules/
 
-# Next.js
-.next/
-out/
+# Build output
+dist/
 
 # Environment files
 .env
@@ -15,6 +14,3 @@ out/
 
 # OS files
 .DS_Store
-
-# Build files
-dist/

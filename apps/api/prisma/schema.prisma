@@ -19,7 +19,7 @@ enum MembershipStatus {
   SUSPENDED
   LEFT
 }
-
+p
 enum ContributionStatus {
   PENDING
   POSTED

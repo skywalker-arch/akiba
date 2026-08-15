@@ -1,0 +1,200 @@
+:root {
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  color: #1f2937;
+  background: linear-gradient(140deg, #f3f4f6 0%, #eef2ff 45%, #dbeafe 100%);
+  line-height: 1.4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+a {
+  color: #0f4c81;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.main-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-link {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  color: #334155;
+}
+
+.nav-link-active {
+  background: #dbeafe;
+  color: #0c4a6e;
+}
+
+.content-shell {
+  max-width: 980px;
+  margin: 1rem auto 0;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.panel,
+.auth-card {
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.auth-card {
+  width: min(520px, calc(100vw - 2rem));
+  margin: 3rem auto;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.form-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  color: #111827;
+  font-weight: 500;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+textarea {
+  min-height: 88px;
+}
+
+.button {
+  border: 0;
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  font-weight: 600;
+  background: #0369a1;
+  color: #fff;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.button-secondary {
+  background: #334155;
+}
+
+.button-danger {
+  background: #b91c1c;
+}
+
+.error-text {
+  color: #b91c1c;
+}
+
+.muted-text {
+  color: #475569;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.list-members li {
+  flex-wrap: wrap;
+}
+
+.chip {
+  border-radius: 999px;
+  background: #e2e8f0;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+.inline-links {
+  display: flex;
+  gap: 1rem;
+}
+
+@media (max-width: 860px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .main-nav {
+    flex-wrap: wrap;
+  }
+
+  .list li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
