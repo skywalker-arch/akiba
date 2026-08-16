@@ -6,6 +6,8 @@ import type {
   ContributionDetails,
   GroupDetails,
   GroupSummary,
+  MemberRole,
+  MemberStatus,
   UserProfile,
 } from "../types/api";
 
@@ -83,7 +85,7 @@ export const groupsApi = {
     token: string,
     groupId: string,
     memberId: string,
-    payload: { role?: "OWNER" | "ADMIN" | "MEMBER"; status?: "PENDING" | "ACTIVE" | "LEFT" },
+    payload: { role?: MemberRole; status?: MemberStatus },
   ) {
     return apiRequest(apiUrl(`/groups/${groupId}/members/${memberId}`), {
       method: "PATCH",

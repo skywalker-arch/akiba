@@ -13,10 +13,13 @@ export type UserProfile = {
   updatedAt: string;
 };
 
+export type MemberRole = "OWNER" | "ADMIN" | "MEMBER";
+export type MemberStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "LEFT";
+
 export type GroupSummary = {
   membershipId: string;
-  role: "OWNER" | "ADMIN" | "MEMBER";
-  status: "PENDING" | "ACTIVE" | "LEFT";
+  role: MemberRole;
+  status: MemberStatus;
   joinedAt: string | null;
   group: {
     id: string;
@@ -44,8 +47,8 @@ export type GroupDetails = {
   };
   memberships: Array<{
     id: string;
-    role: "OWNER" | "ADMIN" | "MEMBER";
-    status: "PENDING" | "ACTIVE" | "LEFT";
+    role: MemberRole;
+    status: MemberStatus;
     joinedAt: string | null;
     createdAt: string;
     user: {

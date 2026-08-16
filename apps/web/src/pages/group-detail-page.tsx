@@ -203,11 +203,9 @@ export function GroupDetailPage() {
             ))}
           </ul>
 
-          {memberCount > 5 && (
-            <Link to={`/groups/${groupId}/members`} className="link-button">
-              View all members
-            </Link>
-          )}
+          <Link to={`/groups/${groupId}/members`} className="link-button">
+            {memberCount > 0 ? "Manage members" : "View members"}
+          </Link>
         </section>
       </div>
 
