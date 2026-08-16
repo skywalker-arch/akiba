@@ -1,22 +1,22 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(15, 23, 42, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 5000;
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.18s ease-out;
 }
 
 .modal-content {
   background: #fff;
   border-radius: 12px;
-  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+  border: 1px solid #dfe7ee;
   width: min(480px, calc(100vw - 2rem));
   max-height: 90vh;
   overflow-y: auto;
-  animation: slideUp 0.3s ease-out;
+  animation: slideUp 0.22s ease-out;
 }
 
 .modal-header {
@@ -29,8 +29,9 @@
 
 .modal-header h2 {
   margin: 0;
-  font-size: 1.5rem;
-  color: #111827;
+  font-size: 1.4rem;
+  line-height: 1.2;
+  color: #0f172a;
 }
 
 .modal-close {
@@ -98,11 +99,11 @@
 .amount-input-wrapper input {
   width: 100%;
   padding: 0.9rem 1rem 0.9rem 3.5rem;
-  border: 2px solid #e5e7eb;
+  border: 1px solid #d6e0eb;
   border-radius: 8px;
   font-size: 1.1rem;
   font-weight: 500;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .amount-input-wrapper input:focus {
@@ -123,16 +124,16 @@
 }
 
 .contribution-info {
-  background: #eff6ff;
-  border-left: 4px solid #3b82f6;
-  padding: 1rem;
-  border-radius: 6px;
+  background: #f8fbff;
+  border-left: 3px solid #0f766e;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
 }
 
 .contribution-info p {
   margin: 0;
-  color: #1e40af;
-  font-size: 0.9rem;
+  color: #0f172a;
+  font-size: 0.92rem;
 }
 
 .modal-actions {

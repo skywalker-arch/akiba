@@ -9,7 +9,7 @@ type ContributionModalProps = {
   group: GroupDetails;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (nextBalance?: { amount: number; currency: string }) => void;
 };
 
 function ContributionModalContent({
@@ -21,7 +21,7 @@ function ContributionModalContent({
   group: GroupDetails;
   token: string;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (nextBalance?: { amount: number; currency: string }) => void;
 }) {
   const { show: showToast } = useToast();
   const [amount, setAmount] = useState("");
@@ -29,13 +29,19 @@ function ContributionModalContent({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function validateAmount(value: string): string | null {
-    if (!value.trim()) {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
       return "Amount is required";
     }
 
-    const numValue = parseFloat(value);
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+      return "Enter a valid amount in KES";
+    }
 
-    if (isNaN(numValue)) {
+    const numValue = Number(trimmed);
+
+    if (!Number.isFinite(numValue)) {
       return "Amount must be a valid number";
     }
 
@@ -52,6 +58,11 @@ function ContributionModalContent({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isSubmitting) {
+      return;
+    }
+
     setError(null);
 
     const validationError = validateAmount(amount);
@@ -63,14 +74,32 @@ function ContributionModalContent({
     setIsSubmitting(true);
 
     try {
-      await contributionsApi.createContribution(token, group.id, {
-        amount: parseFloat(amount),
+      const response = await contributionsApi.createContribution(token, group.id, {
+        amount: Number(amount),
         currency: "KES",
       });
 
-      showToast("Contribution saved successfully", "success");
+      const nextWalletBalance =
+        typeof response === "object" && response !== null && "wallet" in response
+          ? (response as { wallet?: { balance?: number; currency?: string } }).wallet
+          : undefined;
+
+      const nextBalance =
+        nextWalletBalance && typeof nextWalletBalance.balance === "number"
+          ? {
+              amount: nextWalletBalance.balance,
+              currency: nextWalletBalance.currency ?? "KES",
+            }
+          : undefined;
+
+      const formattedAmount = Number(amount).toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+      });
+
+      showToast(`KES ${formattedAmount} added to ${group.name}`, "success");
       setAmount("");
-      onSuccess();
+      onSuccess(nextBalance);
       onClose();
     } catch (submitError) {
       const message =
@@ -104,7 +133,7 @@ function ContributionModalContent({
             How much would you like to contribute to <strong>{group.name}</strong>?
           </p>
 
-          <form onSubmit={onSubmit} className="contribution-form">
+          <form onSubmit={onSubmit} className="contribution-form" noValidate>
             <div className="form-group">
               <label htmlFor="amount">Amount</label>
               <div className="amount-input-wrapper">
@@ -121,13 +150,19 @@ function ContributionModalContent({
                   }}
                   disabled={isSubmitting}
                   autoFocus
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "contribution-amount-error" : undefined}
                 />
               </div>
-              {error && <p className="error-message">{error}</p>}
+              {error && (
+                <p id="contribution-amount-error" className="error-message" role="alert">
+                  {error}
+                </p>
+              )}
             </div>
 
             <div className="contribution-info">
-              <p>Your contribution will be added to this group's savings balance.</p>
+              <p>The amount will be added to this group's savings.</p>
             </div>
 
             <div className="modal-actions">

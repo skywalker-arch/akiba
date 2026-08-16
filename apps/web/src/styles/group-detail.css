@@ -8,10 +8,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1.5rem;
-  padding: 1.5rem;
-  border-radius: 14px;
-  border: 1px solid #d1d5db;
-  background: rgba(255, 255, 255, 0.92);
+  padding: 1.5rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid #dfe7ee;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .group-info {
@@ -19,9 +19,11 @@
 }
 
 .group-header h1 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.75rem;
-  color: #111827;
+  margin: 0 0 0.4rem 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  color: #0f172a;
 }
 
 .group-code {
@@ -49,11 +51,11 @@
 }
 
 .stat-card {
-  padding: 1.25rem;
+  padding: 1.1rem 1rem;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.92);
-  text-align: center;
+  border: 1px solid #e5edf3;
+  background: #fff;
+  text-align: left;
 }
 
 .stat-label {
@@ -67,10 +69,11 @@
 
 .stat-value {
   margin: 0;
-  color: #0369a1;
-  font-size: 2rem;
+  color: #0f172a;
+  font-size: clamp(1.4rem, 2vw, 1.9rem);
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
 }
 
 /* Content Grid */
@@ -121,11 +124,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.9rem;
+  padding: 0.9rem 0.85rem;
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
-  background: #fafbfc;
-  transition: background 0.2s;
+  border: 1px solid #e5edf3;
+  background: #f8fafc;
 }
 
 .contribution-item:hover {
@@ -151,12 +153,14 @@
 
 .contribution-status {
   display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  background: #dcfce7;
-  color: #166534;
-  font-size: 0.75rem;
-  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #e2f7ed;
+  color: #0f766e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .contribution-amount {
@@ -165,9 +169,9 @@
 
 .contribution-amount .amount {
   margin: 0;
-  color: #059669;
+  color: #0f766e;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
 }
 
 /* Members List */

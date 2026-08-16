@@ -19,6 +19,23 @@ export function GroupDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const formatCurrency = (amount: number, currency = "KES") =>
+    `${currency} ${amount.toLocaleString("en-KE", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    })}`;
+
+  const deriveFallbackBalance = (items: Contribution[]) => {
+    if (items.length === 0) {
+      return { amount: 0, currency: "KES" };
+    }
+
+    return {
+      amount: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      currency: "KES",
+    };
+  };
+
   async function loadGroupData() {
     if (!groupId || !token) {
       return;
@@ -35,16 +52,9 @@ export function GroupDetailPage() {
 
       setGroup(groupData);
       setContributions(contributionsData);
-
-      // Calculate total balance from contributions
-      if (contributionsData.length > 0) {
-        setBalance({
-          amount: contributionsData.reduce((sum, c) => sum + c.amount, 0),
-          currency: "KES",
-        });
-      } else {
-        setBalance({ amount: 0, currency: "KES" });
-      }
+      setBalance((currentBalance) =>
+        currentBalance ?? deriveFallbackBalance(contributionsData),
+      );
     } catch (loadError) {
       const message =
         loadError instanceof Error ? loadError.message : "Failed to load group";
@@ -98,7 +108,7 @@ export function GroupDetailPage() {
         <div className="stat-card">
           <p className="stat-label">Group Balance</p>
           <p className="stat-value">
-            {balance?.currency} {balance?.amount.toLocaleString()}
+            {balance ? formatCurrency(balance.amount, balance.currency) : "KES 0"}
           </p>
         </div>
 
@@ -141,14 +151,19 @@ export function GroupDetailPage() {
                       {contribution.membership.user.lastName}
                     </p>
                     <p className="contribution-date">
-                      {new Date(contribution.contributedAt).toLocaleDateString()} •{" "}
+                      {new Date(contribution.contributedAt).toLocaleString("en-KE", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}{" "}
                       <span className="contribution-status">{contribution.status}</span>
                     </p>
                   </div>
 
                   <div className="contribution-amount">
                     <p className="amount">
-                      {contribution.currency} {contribution.amount.toLocaleString()}
+                      + {formatCurrency(contribution.amount, contribution.currency)}
                     </p>
                   </div>
                 </li>
@@ -201,7 +216,12 @@ export function GroupDetailPage() {
         group={group}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSuccess={() => void loadGroupData()}
+        onSuccess={(nextBalance) => {
+          if (nextBalance) {
+            setBalance(nextBalance);
+          }
+          void loadGroupData();
+        }}
       />
     </div>
   );
