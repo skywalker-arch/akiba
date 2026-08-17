@@ -5,11 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  MembershipRole,
-  MembershipStatus,
-  Prisma,
-} from '@prisma/client';
+import { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AddMemberDto } from './dto/add-member.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
@@ -234,9 +230,7 @@ export class GroupsService {
     }
 
     if (targetMembership.role === MembershipRole.OWNER) {
-      throw new BadRequestException(
-        'Owner membership cannot be updated here',
-      );
+      throw new BadRequestException('Owner membership cannot be updated here');
     }
 
     const data: Prisma.GroupMembershipUpdateInput = {
@@ -314,7 +308,7 @@ export class GroupsService {
     });
   }
 
-  private async ensureGroupMember(userId: string, groupId: string) {
+  public async ensureGroupMember(userId: string, groupId: string) {
     const membership = await this.prisma.groupMembership.findUnique({
       where: {
         userId_groupId: {
@@ -335,7 +329,7 @@ export class GroupsService {
     return membership;
   }
 
-  private async ensureGroupManager(userId: string, groupId: string) {
+  public async ensureGroupManager(userId: string, groupId: string) {
     const membership = await this.prisma.groupMembership.findUnique({
       where: {
         userId_groupId: {

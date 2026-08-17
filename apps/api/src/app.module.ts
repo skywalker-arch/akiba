@@ -4,6 +4,7 @@ import { PrismaModule } from './database/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ContributionsModule } from './modules/contributions/contributions.module';
 import { GroupsModule } from './modules/groups/groups.module';
+import { LoansModule } from './modules/loans/loans.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -13,6 +14,7 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     ContributionsModule,
     GroupsModule,
+    LoansModule,
     UsersModule,
   ],
   controllers: [],
