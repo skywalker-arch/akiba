@@ -75,24 +75,23 @@ export class LoansService {
       orderBy: {
         createdAt: 'desc',
       },
-            purpose: true,
-            disbursedAt: true,
-            dueAt: true,
       select: {
         id: true,
         borrowerMembershipId: true,
         principalAmount: true,
         interestRate: true,
         termMonths: true,
-        status: true,
-        status: true,
-                joinedAt: true,
-        createdAt: true,
-        updatedAt: true,
+        purpose: true,
         disbursedAt: true,
         dueAt: true,
-            role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        borrowerMembership: {
+          select: {
             id: true,
+            role: true,
+            status: true,
             joinedAt: true,
             user: {
               select: {
@@ -103,23 +102,9 @@ export class LoansService {
                 phone: true,
               },
             },
-            groupId: true,
-            userId: true,
-            status: true,
           },
         },
-
-    await this.groupsService.ensureGroupManager(
-      userId,
-      loan.borrowerMembership.groupId,
-    );
-
-    if (!Object.values(LoanStatus).includes(input.status)) {
-      throw new NotFoundException('Loan status is invalid');
-    }
-
-    throw new NotImplementedException(
-      'Loan status updates are not implemented yet',
-    );
+      },
+    });
   }
 }
