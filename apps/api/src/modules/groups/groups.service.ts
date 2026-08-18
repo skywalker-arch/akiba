@@ -329,6 +329,18 @@ export class GroupsService {
     return membership;
   }
 
+  public async ensureActiveGroupMember(userId: string, groupId: string) {
+    const membership = await this.ensureGroupMember(userId, groupId);
+
+    if (membership.status !== MembershipStatus.ACTIVE) {
+      throw new ForbiddenException(
+        'Only ACTIVE group members can request loans',
+      );
+    }
+
+    return membership;
+  }
+
   public async ensureGroupManager(userId: string, groupId: string) {
     const membership = await this.prisma.groupMembership.findUnique({
       where: {

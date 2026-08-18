@@ -1,13 +1,8 @@
-import {
-  Injectable,
-  NotFoundException,
-  NotImplementedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { LoanStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { GroupsService } from '../groups/groups.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
-import { UpdateLoanStatusDto } from './dto/update-loan-status.dto';
 
 @Injectable()
 export class LoansService {
@@ -17,21 +12,24 @@ export class LoansService {
   ) {}
 
   async createLoan(userId: string, groupId: string, input: CreateLoanDto) {
-    void input;
-    await this.groupsService.ensureGroupMember(userId, groupId);
+    const membership = await this.groupsService.ensureActiveGroupMember(
+      userId,
+      groupId,
+    );
 
-    throw new NotImplementedException('Loan creation is not implemented yet');
-  }
+    if (input.principalAmount <= 0) {
+      throw new BadRequestException('Loan amount must be greater than 0');
+    }
 
-  async getGroupLoans(userId: string, groupId: string) {
-    await this.groupsService.ensureGroupMember(userId, groupId);
-
-    throw new NotImplementedException('Loan listing is not implemented yet');
-  }
-
-  async getLoanById(userId: string, loanId: string) {
-    const loan = await this.prisma.loan.findUnique({
-      where: { id: loanId },
+    return this.prisma.loan.create({
+      data: {
+        borrowerMembershipId: membership.id,
+        principalAmount: input.principalAmount,
+        interestRate: input.interestRate,
+        termMonths: input.termMonths,
+        purpose: input.purpose,
+        status: LoanStatus.REQUESTED,
+      },
       select: {
         id: true,
         borrowerMembershipId: true,
@@ -39,55 +37,77 @@ export class LoansService {
         interestRate: true,
         termMonths: true,
         purpose: true,
+        disbursedAt: true,
+        dueAt: true,
         status: true,
+        createdAt: true,
+        updatedAt: true,
+        borrowerMembership: {
+          select: {
+            id: true,
+            role: true,
+            status: true,
+            joinedAt: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async getGroupLoans(userId: string, groupId: string) {
+    await this.groupsService.ensureGroupMember(userId, groupId);
+
+    return this.prisma.loan.findMany({
+      where: {
+        borrowerMembership: {
+          groupId,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+            purpose: true,
+            disbursedAt: true,
+            dueAt: true,
+      select: {
+        id: true,
+        borrowerMembershipId: true,
+        principalAmount: true,
+        interestRate: true,
+        termMonths: true,
+        status: true,
+        status: true,
+                joinedAt: true,
         createdAt: true,
         updatedAt: true,
         disbursedAt: true,
         dueAt: true,
-        borrowerMembership: {
-          select: {
+            role: true,
             id: true,
+            joinedAt: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+              },
+            },
             groupId: true,
             userId: true,
             status: true,
           },
         },
-      },
-    });
-
-    if (!loan) {
-      throw new NotFoundException('Loan not found');
-    }
-
-    await this.groupsService.ensureGroupMember(
-      userId,
-      loan.borrowerMembership.groupId,
-    );
-
-    throw new NotImplementedException('Loan retrieval is not implemented yet');
-  }
-
-  async updateLoanStatus(
-    userId: string,
-    loanId: string,
-    input: UpdateLoanStatusDto,
-  ) {
-    const loan = await this.prisma.loan.findUnique({
-      where: { id: loanId },
-      select: {
-        id: true,
-        status: true,
-        borrowerMembership: {
-          select: {
-            groupId: true,
-          },
-        },
-      },
-    });
-
-    if (!loan) {
-      throw new NotFoundException('Loan not found');
-    }
 
     await this.groupsService.ensureGroupManager(
       userId,
