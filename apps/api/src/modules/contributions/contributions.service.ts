@@ -26,7 +26,9 @@ export class ContributionsService {
     input: CreateContributionDto,
   ) {
     if (input.amount <= 0) {
-      throw new BadRequestException('Contribution amount must be greater than 0');
+      throw new BadRequestException(
+        'Contribution amount must be greater than 0',
+      );
     }
 
     const currency = (input.currency ?? 'KES').trim().toUpperCase();

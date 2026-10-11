@@ -18,8 +18,22 @@ export class LoansService {
     );
 
     if (input.principalAmount <= 0) {
-      throw new BadRequestException('Loan amount must be greater than 0');
+      throw new BadRequestException(
+        'Loan principal amount must be greater than 0',
+      );
     }
+
+    if (input.interestRate <= 0) {
+      throw new BadRequestException('Interest rate must be greater than 0');
+    }
+
+    if (!Number.isInteger(input.termMonths) || input.termMonths <= 0) {
+      throw new BadRequestException(
+        'Loan term in months must be greater than 0',
+      );
+    }
+
+    const purpose = input.purpose?.trim();
 
     return this.prisma.loan.create({
       data: {
@@ -27,7 +41,7 @@ export class LoansService {
         principalAmount: input.principalAmount,
         interestRate: input.interestRate,
         termMonths: input.termMonths,
-        purpose: input.purpose,
+        purpose: purpose || undefined,
         status: LoanStatus.REQUESTED,
       },
       select: {

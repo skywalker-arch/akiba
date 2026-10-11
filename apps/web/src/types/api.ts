@@ -62,6 +62,43 @@ export type GroupDetails = {
   memberCount: number;
 };
 
+export type LoanStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "DISBURSED"
+  | "ACTIVE"
+  | "OVERDUE"
+  | "CLOSED"
+  | "REJECTED"
+  | "DEFAULTED";
+
+export type Loan = {
+  id: string;
+  borrowerMembershipId: string;
+  principalAmount: number;
+  interestRate: number;
+  termMonths: number;
+  purpose: string | null;
+  disbursedAt: string | null;
+  dueAt: string | null;
+  status: LoanStatus;
+  createdAt: string;
+  updatedAt: string;
+  borrowerMembership: {
+    id: string;
+    role: string;
+    status: string;
+    joinedAt: string | null;
+    user: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string | null;
+    };
+  };
+};
+
 export type Contribution = {
   id: string;
   amount: number;

@@ -6,6 +6,7 @@ import type {
   ContributionDetails,
   GroupDetails,
   GroupSummary,
+  Loan,
   MemberRole,
   MemberStatus,
   UserProfile,
@@ -126,6 +127,28 @@ export const contributionsApi = {
   getContributionById(token: string, contributionId: string) {
     return apiRequest<ContributionDetails>(apiUrl(`/contributions/${contributionId}`), {
       token,
+    });
+  },
+};
+
+export const loansApi = {
+  getGroupLoans(token: string, groupId: string) {
+    return apiRequest<Loan[]>(apiUrl(`/groups/${groupId}/loans`), { token });
+  },
+  createLoan(
+    token: string,
+    groupId: string,
+    payload: {
+      principalAmount: number;
+      interestRate: number;
+      termMonths: number;
+      purpose?: string;
+    },
+  ) {
+    return apiRequest<Loan>(apiUrl(`/groups/${groupId}/loans`), {
+      method: "POST",
+      token,
+      body: payload,
     });
   },
 };
