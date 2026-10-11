@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -44,5 +45,13 @@ export class ContributionsController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.contributionsService.getContributionById(user.sub, id);
+  }
+
+  @Get('transactions')
+  getUserTransactions(
+    @CurrentUser() user: { sub: string; email: string },
+    @Query() query: { type?: string; status?: string; groupId?: string },
+  ) {
+    return this.contributionsService.getUserTransactions(user.sub, query);
   }
 }

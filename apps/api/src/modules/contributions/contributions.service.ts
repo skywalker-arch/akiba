@@ -260,6 +260,180 @@ export class ContributionsService {
     return contribution;
   }
 
+  async getUserTransactions(
+    userId: string,
+    filters?: { type?: string; status?: string; groupId?: string },
+  ) {
+    const memberships = await this.prisma.groupMembership.findMany({
+      where: {
+        userId,
+        status: {
+          not: MembershipStatus.LEFT,
+        },
+      },
+      select: {
+        groupId: true,
+      },
+    });
+
+    const groupIds = [...new Set(memberships.map((membership) => membership.groupId))];
+
+    if (groupIds.length === 0) {
+      return [];
+    }
+
+    const where: {
+      wallet?: { groupId: { in: string[] } | string };
+      type?: TransactionType;
+      status?: TransactionStatus;
+    } = {
+      wallet: {
+        groupId: { in: groupIds },
+      },
+    };
+
+    if (filters?.groupId) {
+      const membership = await this.prisma.groupMembership.findUnique({
+        where: {
+          userId_groupId: {
+            userId,
+            groupId: filters.groupId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException('You are not a member of this group');
+      }
+
+      where.wallet = {
+        groupId: filters.groupId,
+      };
+    }
+
+    if (filters?.type) {
+      const normalizedType = filters.type.toUpperCase();
+      if (!(Object.values(TransactionType) as string[]).includes(normalizedType)) {
+        throw new ForbiddenException('Unsupported transaction type filter');
+      }
+
+      where.type = normalizedType as TransactionType;
+    }
+
+    if (filters?.status) {
+      const normalizedStatus = filters.status.toUpperCase();
+      if (!(Object.values(TransactionStatus) as string[]).includes(normalizedStatus)) {
+        throw new ForbiddenException('Unsupported transaction status filter');
+      }
+
+      where.status = normalizedStatus as TransactionStatus;
+    }
+
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      orderBy: {
+        occurredAt: 'desc',
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        amount: true,
+        currency: true,
+        occurredAt: true,
+        description: true,
+        externalReference: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+        wallet: {
+          select: {
+            id: true,
+            type: true,
+            groupId: true,
+            currency: true,
+            balance: true,
+            updatedAt: true,
+            group: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                description: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+        contribution: {
+          select: {
+            id: true,
+            amount: true,
+            currency: true,
+            status: true,
+            membership: {
+              select: {
+                id: true,
+                role: true,
+                status: true,
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        loan: {
+          select: {
+            id: true,
+            principalAmount: true,
+            interestRate: true,
+            termMonths: true,
+            status: true,
+            borrowerMembership: {
+              select: {
+                id: true,
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    phone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        loanRepayment: {
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            reference: true,
+            paidAt: true,
+          },
+        },
+      },
+    });
+
+    return transactions.map((transaction) => ({
+      ...transaction,
+      wallet: {
+        ...transaction.wallet,
+        group: transaction.wallet.group ?? null,
+      },
+    }));
+  }
+
   private async ensureGroupMember(userId: string, groupId: string) {
     const membership = await this.prisma.groupMembership.findUnique({
       where: {
