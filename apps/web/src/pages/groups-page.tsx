@@ -61,9 +61,17 @@ export function GroupsPage() {
 
   return (
     <section className="stack">
-      <div className="panel">
-        <h1>Groups</h1>
-        <p className="muted-text">Manage your savings groups and memberships.</p>
+      <div className="panel hero-panel">
+        <div>
+          <p className="eyebrow">Groups</p>
+          <h1>Manage your chama memberships</h1>
+          <p className="muted-text">Create group records, review roles, and keep every contribution in one place.</p>
+        </div>
+
+        <div className="hero-badge" aria-label="Number of group memberships">
+          <span className="hero-badge-label">Memberships</span>
+          <span className="hero-badge-value">{groups.length}</span>
+        </div>
       </div>
 
       <div className="panel">
@@ -108,10 +116,20 @@ export function GroupsPage() {
       </div>
 
       <div className="panel">
-        <h2>My groups</h2>
+        <div className="section-header">
+          <h2>My groups</h2>
+          <span className="section-count">{groups.length}</span>
+        </div>
+
         {isLoading ? <p>Loading groups...</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
-        {!isLoading && groups.length === 0 ? <p>No groups found.</p> : null}
+        {!isLoading && groups.length === 0 ? (
+          <div className="empty-state">
+            <strong>No groups found.</strong>
+            <span>Your savings circles will appear here once they are created.</span>
+          </div>
+        ) : null}
+
         {!isLoading && groups.length > 0 ? (
           <ul className="list">
             {groups.map((item) => (

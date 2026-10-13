@@ -1,15 +1,25 @@
 import { FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { useAuth } from "../context/auth-context";
 import { usersApi } from "../lib/api";
 import type { UserProfile } from "../types/api";
 
 export function ProfilePage() {
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState({ firstName: "", lastName: "", phone: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  function handleSessionExpiry(message: string) {
+    if (message.toLowerCase().includes("unauthorized") || message.toLowerCase().includes("forbidden")) {
+      logout();
+      navigate("/login", { replace: true });
+    }
+  }
 
   useEffect(() => {
     if (!token) {
@@ -28,10 +38,13 @@ export function ProfilePage() {
         });
       })
       .catch((loadError) => {
-        setError(loadError instanceof Error ? loadError.message : "Failed to load profile");
+        const message =
+          loadError instanceof Error ? loadError.message : "Failed to load profile";
+        handleSessionExpiry(message);
+        setError(message);
       })
       .finally(() => setIsLoading(false));
-  }, [token]);
+  }, [logout, navigate, token]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,18 +52,39 @@ export function ProfilePage() {
       return;
     }
 
+    const nextFirstName = form.firstName.trim();
+    const nextLastName = form.lastName.trim();
+    const nextPhone = form.phone.trim();
+
+    if (nextFirstName.length < 2 || nextLastName.length < 2) {
+      setError("First and last names must each be at least 2 characters.");
+      setSuccess(null);
+      return;
+    }
+
+    if (nextPhone && !/^\+?[0-9()\-\s]{7,20}$/.test(nextPhone)) {
+      setError("Enter a valid phone number or leave it blank.");
+      setSuccess(null);
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
+    setSuccess(null);
 
     try {
       const result = await usersApi.updateMe(token, {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        phone: form.phone || undefined,
+        firstName: nextFirstName,
+        lastName: nextLastName,
+        phone: nextPhone || undefined,
       });
       setProfile(result);
+      setSuccess("Your profile was updated successfully.");
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to update");
+      const message =
+        submitError instanceof Error ? submitError.message : "Failed to update profile";
+      handleSessionExpiry(message);
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -61,6 +95,7 @@ export function ProfilePage() {
       <h1>Profile</h1>
       {isLoading ? <p>Loading profile...</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
+      {success ? <p className="success-text">{success}</p> : null}
 
       {profile ? (
         <form className="form-grid" onSubmit={onSubmit}>

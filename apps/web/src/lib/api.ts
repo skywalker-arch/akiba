@@ -9,6 +9,7 @@ import type {
   Loan,
   MemberRole,
   MemberStatus,
+  Transaction,
   UserProfile,
 } from "../types/api";
 
@@ -153,10 +154,31 @@ export const loansApi = {
   },
 };
 
-// Transaction and wallet information are accessible via contribution details,
-// which include nested transactions and wallet state from the existing backend.
 export const financeApi = {
   getContributionWithWallet(token: string, contributionId: string) {
     return contributionsApi.getContributionById(token, contributionId);
+  },
+  getUserTransactions(
+    token: string,
+    filters?: { type?: string; status?: string; groupId?: string },
+  ) {
+    const params = new URLSearchParams();
+
+    if (filters?.type) {
+      params.set("type", filters.type);
+    }
+
+    if (filters?.status) {
+      params.set("status", filters.status);
+    }
+
+    if (filters?.groupId) {
+      params.set("groupId", filters.groupId);
+    }
+
+    const query = params.toString();
+    return apiRequest<Transaction[]>(apiUrl(`/transactions${query ? `?${query}` : ""}`), {
+      token,
+    });
   },
 };
