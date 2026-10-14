@@ -35,7 +35,7 @@ export function LoginPage() {
   return (
     <section className="auth-layout">
       <div className="auth-panel auth-panel--highlight">
-        <AkibaLogo invert />
+        <AkibaLogo invert variant="auth" />
         <div className="auth-copy">
           <p className="eyebrow eyebrow--light">Savings built for together</p>
           <h1>Grow wealth with your circle.</h1>

@@ -48,7 +48,7 @@ export function RegisterPage() {
   return (
     <section className="auth-layout">
       <div className="auth-panel auth-panel--highlight">
-        <AkibaLogo invert />
+        <AkibaLogo invert variant="auth" />
         <div className="auth-copy">
           <p className="eyebrow eyebrow--light">Join the movement</p>
           <h1>Build a stronger financial circle.</h1>

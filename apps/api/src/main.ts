@@ -1,12 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-
-const parseOrigins = (value: string | undefined) =>
-  (value ?? 'http://localhost:5173')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+import { parseOrigins } from './config/cors';
 
 async function bootstrap() {
   const port = Number(process.env.PORT ?? 4000);
@@ -33,7 +28,9 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      const normalizedOrigin = origin ? new URL(origin).origin : origin;
+
+      if (!origin || allowedOrigins.includes(normalizedOrigin)) {
         callback(null, true);
         return;
       }

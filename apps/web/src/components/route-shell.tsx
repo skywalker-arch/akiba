@@ -22,7 +22,7 @@ export function RouteShell() {
     <div className="app-shell">
       <aside className="app-sidebar" aria-label="Primary sidebar">
         <div className="sidebar-brand-wrap">
-          <AkibaLogo />
+          <AkibaLogo variant="sidebar" />
         </div>
 
         <nav className="sidebar-nav" aria-label="Primary navigation">

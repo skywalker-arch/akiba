@@ -2,16 +2,27 @@ type AkibaLogoProps = {
   compact?: boolean;
   invert?: boolean;
   className?: string;
+  variant?: "sidebar" | "auth" | "compact";
 };
 
-export function AkibaLogo({ compact = false, invert = false, className = "" }: AkibaLogoProps) {
+export function AkibaLogo({
+  compact = false,
+  invert = false,
+  className = "",
+  variant = "sidebar",
+}: AkibaLogoProps) {
   const textColor = invert ? "#F8F5EE" : "#123D32";
+  const isWordmarkVisible = !compact && variant !== "compact";
 
   return (
-    <div className={`akiba-logo ${compact ? "compact" : ""} ${className}`.trim()}>
+    <div
+      className={`akiba-logo akiba-logo--${variant} ${compact ? "akiba-logo--compact" : ""} ${className}`.trim()}
+    >
       <svg
         className="akiba-mark"
         viewBox="0 0 120 120"
+        width="56"
+        height="56"
         aria-hidden="true"
         role="img"
       >
@@ -47,7 +58,7 @@ export function AkibaLogo({ compact = false, invert = false, className = "" }: A
         />
       </svg>
 
-      {!compact ? (
+      {isWordmarkVisible ? (
         <span className="akiba-wordmark" style={{ color: textColor }}>
           Akiba
         </span>
