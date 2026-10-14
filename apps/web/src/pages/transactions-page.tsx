@@ -74,23 +74,23 @@ export function TransactionsPage() {
     return transactions.filter((transaction) => {
       const matchesGroup =
         selectedGroupId === "all" || transaction.wallet.groupId === selectedGroupId;
-      const matchesType =
-        selectedType === "all" || transaction.type === selectedType;
+      const matchesType = selectedType === "all" || transaction.type === selectedType;
       return matchesGroup && matchesType;
     });
   }, [selectedGroupId, selectedType, transactions]);
 
   if (isLoading) {
-    return <section className="panel">Loading transaction history...</section>;
+    return <section className="panel panel-loading">Loading transaction history...</section>;
   }
 
   return (
     <section className="stack">
-      <div className="panel">
-        <h1>Transaction history</h1>
-        <p className="muted-text">
-          Review real account activity across your group wallets and contribution records.
-        </p>
+      <div className="panel hero-panel hero-panel--compact">
+        <div className="hero-content">
+          <p className="eyebrow eyebrow--light">Transaction history</p>
+          <h1>Wallet activity</h1>
+          <p className="muted-text muted-text--light">Review real account flow across your group wallets and contribution records.</p>
+        </div>
       </div>
 
       <div className="panel">
@@ -129,14 +129,19 @@ export function TransactionsPage() {
         {error ? <p className="error-text">{error}</p> : null}
 
         {!error && filteredTransactions.length === 0 ? (
-          <p className="muted-text">No transactions match the current filters.</p>
+          <div className="empty-state empty-state--compact">
+            <strong>No matching activity</strong>
+            <span>Try a different group or transaction type to view more of your account history.</span>
+          </div>
         ) : null}
 
         {filteredTransactions.length > 0 ? (
           <ul className="transaction-list">
             {filteredTransactions.map((transaction) => {
               const signedAmount =
-                transaction.type === "WITHDRAWAL" || transaction.type === "TRANSFER_OUT" || transaction.type === "FEE"
+                transaction.type === "WITHDRAWAL" ||
+                transaction.type === "TRANSFER_OUT" ||
+                transaction.type === "FEE"
                   ? -Math.abs(Number(transaction.amount || 0))
                   : Number(transaction.amount || 0);
               const isPositive = signedAmount >= 0;
@@ -163,13 +168,11 @@ export function TransactionsPage() {
                   </div>
 
                   <div className="transaction-summary">
-                    <span
-                      className={`transaction-amount ${isPositive ? "positive" : "negative"}`}
-                    >
+                    <span className={`transaction-amount ${isPositive ? "positive" : "negative"}`}>
                       {isPositive ? "+" : "-"}
                       {formatMoney(Math.abs(signedAmount), transaction.currency)}
                     </span>
-                    <span className="transaction-status">
+                    <span className="status-pill status-pill--neutral">
                       {transactionStatusLabels[transaction.status] ?? transaction.status}
                     </span>
                   </div>
@@ -181,7 +184,7 @@ export function TransactionsPage() {
       </div>
 
       <div className="panel">
-        <Link to="/groups">Return to groups</Link>
+        <Link className="text-link" to="/groups">Return to groups</Link>
       </div>
     </section>
   );

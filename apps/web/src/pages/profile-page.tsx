@@ -91,59 +91,72 @@ export function ProfilePage() {
   }
 
   return (
-    <section className="panel">
-      <h1>Profile</h1>
-      {isLoading ? <p>Loading profile...</p> : null}
-      {error ? <p className="error-text">{error}</p> : null}
-      {success ? <p className="success-text">{success}</p> : null}
+    <section className="stack">
+      <div className="panel hero-panel hero-panel--compact">
+        <div className="hero-content">
+          <p className="eyebrow eyebrow--light">Profile</p>
+          <h1>{profile ? `${profile.firstName} ${profile.lastName}` : "Your account"}</h1>
+          <p className="muted-text muted-text--light">
+            {profile?.email ?? "Keeping your account information accurate and secure."}
+          </p>
+        </div>
+      </div>
 
-      {profile ? (
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label>
-            Email
-            <input value={profile.email} disabled />
-          </label>
+      <div className="panel">
+        {isLoading ? <p className="muted-text">Loading profile...</p> : null}
+        {error ? <p className="error-text">{error}</p> : null}
+        {success ? <p className="success-text">{success}</p> : null}
 
-          <label>
-            First name
-            <input
-              value={form.firstName}
-              minLength={2}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, firstName: event.target.value }))
-              }
-              required
-            />
-          </label>
+        {profile ? (
+          <form className="form-grid" onSubmit={onSubmit}>
+            <label>
+              Email
+              <input value={profile.email} disabled />
+            </label>
 
-          <label>
-            Last name
-            <input
-              value={form.lastName}
-              minLength={2}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, lastName: event.target.value }))
-              }
-              required
-            />
-          </label>
+            <div className="field-pair">
+              <label>
+                First name
+                <input
+                  value={form.firstName}
+                  minLength={2}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, firstName: event.target.value }))
+                  }
+                  required
+                />
+              </label>
 
-          <label>
-            Phone
-            <input
-              value={form.phone}
-              minLength={7}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, phone: event.target.value }))
-              }
-            />
-          </label>
+              <label>
+                Last name
+                <input
+                  value={form.lastName}
+                  minLength={2}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, lastName: event.target.value }))
+                  }
+                  required
+                />
+              </label>
+            </div>
 
-          <button className="button" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving..." : "Save changes"}
-          </button>
-        </form>
-      ) : null}
+            <label>
+              Phone
+              <input
+                value={form.phone}
+                minLength={7}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, phone: event.target.value }))
+                }
+              />
+            </label>
+
+            <button className="button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving..." : "Save changes"}
+            </button>
+          </form>
+        ) : null}
+      </div>
     </section>
   );
 }

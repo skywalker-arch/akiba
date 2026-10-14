@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router";
+import { AkibaLogo } from "../components/akiba-logo";
 import { useAuth } from "../context/auth-context";
 import { authApi } from "../lib/api";
 
@@ -45,84 +46,111 @@ export function RegisterPage() {
   }
 
   return (
-    <section className="auth-card">
-      <h1>Create account</h1>
-      <p>Set up your Akiba profile to start managing savings groups.</p>
+    <section className="auth-layout">
+      <div className="auth-panel auth-panel--highlight">
+        <AkibaLogo invert />
+        <div className="auth-copy">
+          <p className="eyebrow eyebrow--light">Join the movement</p>
+          <h1>Build a stronger financial circle.</h1>
+          <p>
+            Create your profile and start managing group contributions with clarity, trust, and momentum.
+          </p>
+        </div>
+        <div className="auth-stat-grid">
+          <div>
+            <strong>Group-ready</strong>
+            <span>member accounts</span>
+          </div>
+          <div>
+            <strong>Secure</strong>
+            <span>verification flows</span>
+          </div>
+        </div>
+      </div>
 
-      <form onSubmit={onSubmit} className="form-grid">
-        <label>
-          First name
-          <input
-            type="text"
-            value={form.firstName}
-            minLength={2}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, firstName: event.target.value }))
-            }
-            required
-          />
-        </label>
+      <div className="auth-panel auth-panel--form">
+        <div className="auth-card-heading">
+          <p className="eyebrow">Create account</p>
+          <h2>Set up your profile</h2>
+        </div>
 
-        <label>
-          Last name
-          <input
-            type="text"
-            value={form.lastName}
-            minLength={2}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, lastName: event.target.value }))
-            }
-            required
-          />
-        </label>
+        <form onSubmit={onSubmit} className="form-grid">
+          <div className="field-pair">
+            <label>
+              First name
+              <input
+                type="text"
+                value={form.firstName}
+                minLength={2}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, firstName: event.target.value }))
+                }
+                required
+              />
+            </label>
 
-        <label>
-          Email
-          <input
-            type="email"
-            value={form.email}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, email: event.target.value }))
-            }
-            required
-          />
-        </label>
+            <label>
+              Last name
+              <input
+                type="text"
+                value={form.lastName}
+                minLength={2}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, lastName: event.target.value }))
+                }
+                required
+              />
+            </label>
+          </div>
 
-        <label>
-          Password
-          <input
-            type="password"
-            value={form.password}
-            minLength={8}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, password: event.target.value }))
-            }
-            required
-          />
-        </label>
+          <label>
+            Email
+            <input
+              type="email"
+              value={form.email}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, email: event.target.value }))
+              }
+              required
+            />
+          </label>
 
-        <label>
-          Phone (optional)
-          <input
-            type="text"
-            value={form.phone}
-            minLength={7}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, phone: event.target.value }))
-            }
-          />
-        </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={form.password}
+              minLength={8}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, password: event.target.value }))
+              }
+              required
+            />
+          </label>
 
-        {error ? <p className="error-text">{error}</p> : null}
+          <label>
+            Phone (optional)
+            <input
+              type="text"
+              value={form.phone}
+              minLength={7}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, phone: event.target.value }))
+              }
+            />
+          </label>
 
-        <button className="button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Creating account..." : "Create account"}
-        </button>
-      </form>
+          {error ? <p className="error-text">{error}</p> : null}
 
-      <p className="muted-text">
-        Already registered? <Link to="/login">Sign in</Link>
-      </p>
+          <button className="button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Creating account..." : "Create account"}
+          </button>
+        </form>
+
+        <p className="muted-text auth-switcher">
+          Already registered? <Link to="/login">Sign in</Link>
+        </p>
+      </div>
     </section>
   );
 }

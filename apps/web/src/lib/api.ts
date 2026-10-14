@@ -115,15 +115,42 @@ export const contributionsApi = {
     payload: {
       amount: number;
       currency?: string;
-      reference?: string;
+      reference: string;
       notes?: string;
     },
   ) {
-    return apiRequest(apiUrl(`/groups/${groupId}/contributions`), {
-      method: "POST",
-      token,
-      body: payload,
-    });
+    return apiRequest<{ id: string; status: string; reference: string }>(
+      apiUrl(`/groups/${groupId}/contributions`),
+      {
+        method: "POST",
+        token,
+        body: payload,
+      },
+    );
+  },
+  approveContribution(token: string, groupId: string, contributionId: string) {
+    return apiRequest<{ id: string; status: string }>(
+      apiUrl(`/groups/${groupId}/contributions/${contributionId}/approve`),
+      {
+        method: "POST",
+        token,
+      },
+    );
+  },
+  rejectContribution(
+    token: string,
+    groupId: string,
+    contributionId: string,
+    reason: string,
+  ) {
+    return apiRequest<{ id: string; status: string; reason: string }>(
+      apiUrl(`/groups/${groupId}/contributions/${contributionId}/reject`),
+      {
+        method: "POST",
+        token,
+        body: { reason },
+      },
+    );
   },
   getContributionById(token: string, contributionId: string) {
     return apiRequest<ContributionDetails>(apiUrl(`/contributions/${contributionId}`), {

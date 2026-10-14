@@ -25,6 +25,7 @@ function ContributionModalContent({
 }) {
   const { show: showToast } = useToast();
   const [amount, setAmount] = useState("");
+  const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -71,35 +72,38 @@ function ContributionModalContent({
       return;
     }
 
+    const trimmedReference = reference.trim();
+    if (!trimmedReference) {
+      setError("M-Pesa reference is required");
+      return;
+    }
+
+    if (trimmedReference.length < 3 || trimmedReference.length > 100) {
+      setError("M-Pesa reference must be between 3 and 100 characters");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const response = await contributionsApi.createContribution(token, group.id, {
+      await contributionsApi.createContribution(token, group.id, {
         amount: Number(amount),
         currency: "KES",
+        reference: trimmedReference,
       });
-
-      const nextWalletBalance =
-        typeof response === "object" && response !== null && "wallet" in response
-          ? (response as { wallet?: { balance?: number; currency?: string } }).wallet
-          : undefined;
-
-      const nextBalance =
-        nextWalletBalance && typeof nextWalletBalance.balance === "number"
-          ? {
-              amount: nextWalletBalance.balance,
-              currency: nextWalletBalance.currency ?? "KES",
-            }
-          : undefined;
 
       const formattedAmount = Number(amount).toLocaleString("en-KE", {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,
       });
 
-      showToast(`KES ${formattedAmount} added to ${group.name}`, "success");
+      showToast(
+        `Contribution for KES ${formattedAmount} submitted for verification in ${group.name}`,
+        "success",
+      );
       setAmount("");
-      onSuccess(nextBalance);
+      setReference("");
+      onSuccess();
       onClose();
     } catch (submitError) {
       const message =
@@ -154,16 +158,34 @@ function ContributionModalContent({
                   aria-describedby={error ? "contribution-amount-error" : undefined}
                 />
               </div>
-              {error && (
-                <p id="contribution-amount-error" className="error-message" role="alert">
-                  {error}
-                </p>
-              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="reference">M-Pesa reference</label>
+              <input
+                id="reference"
+                type="text"
+                value={reference}
+                onChange={(e) => {
+                  setReference(e.target.value);
+                  if (error) setError(null);
+                }}
+                placeholder="QH35T8Z7X2"
+                disabled={isSubmitting}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "contribution-amount-error" : undefined}
+              />
             </div>
 
             <div className="contribution-info">
-              <p>The amount will be added to this group's savings.</p>
+              <p>New contributions stay pending until an active group owner or admin verifies the payment.</p>
             </div>
+
+            {error && (
+              <p id="contribution-amount-error" className="error-message" role="alert">
+                {error}
+              </p>
+            )}
 
             <div className="modal-actions">
               <button

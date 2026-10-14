@@ -19,10 +19,11 @@ enum MembershipStatus {
   SUSPENDED
   LEFT
 }
-p
+
 enum ContributionStatus {
   PENDING
   POSTED
+  REJECTED
   REVERSED
 }
 
@@ -82,6 +83,7 @@ model User {
   createdGroups SavingsGroup[]    @relation("GroupCreator")
   memberships   GroupMembership[]
   wallets       Wallet[]
+  reviewedContributions Contribution[] @relation("ContributionReviewedBy")
 
   @@index([createdAt])
 }
@@ -135,10 +137,14 @@ model Contribution {
   contributedAt DateTime
   reference     String?            @unique
   notes         String?
+  reviewedById String?
+  reviewReason String?
+  reviewedAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
   membership   GroupMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  reviewedBy   User?           @relation("ContributionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
   transactions Transaction[]
 
   @@index([membershipId, contributedAt])
