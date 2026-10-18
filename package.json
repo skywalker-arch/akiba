@@ -3,6 +3,8 @@
   "private": true,
   "packageManager": "pnpm@11.11.0",
   "scripts": {
-    "dev": "echo \"Run apps individually\""
+    "dev": "echo \"Run apps individually\"",
+    "build": "pnpm --filter api build",
+    "postinstall": "pnpm --dir apps/api prisma generate --schema ./prisma/schema.prisma"
   }
 }
