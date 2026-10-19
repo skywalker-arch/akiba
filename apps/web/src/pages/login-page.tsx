@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router";
+import { AkibaLogo } from "../components/akiba-logo";
 import { useAuth } from "../context/auth-context";
 import { authApi } from "../lib/api";
 
@@ -32,42 +33,67 @@ export function LoginPage() {
   }
 
   return (
-    <section className="auth-card">
-      <h1>Welcome back</h1>
-      <p>Sign in to continue to your Akiba dashboard.</p>
+    <section className="auth-layout">
+      <div className="auth-panel auth-panel--highlight">
+        <AkibaLogo invert variant="auth" />
+        <div className="auth-copy">
+          <p className="eyebrow eyebrow--light">Savings built for together</p>
+          <h1>Grow wealth with your circle.</h1>
+          <p>
+            Track contributions, manage group disbursements, and keep every member aligned with one trusted platform.
+          </p>
+        </div>
+        <div className="auth-stat-grid">
+          <div>
+            <strong>Real-time</strong>
+            <span>group activity</span>
+          </div>
+          <div>
+            <strong>Trust-first</strong>
+            <span>verification flow</span>
+          </div>
+        </div>
+      </div>
 
-      <form onSubmit={onSubmit} className="form-grid">
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </label>
+      <div className="auth-panel auth-panel--form">
+        <div className="auth-card-heading">
+          <p className="eyebrow">Welcome back</p>
+          <h2>Sign in to Akiba</h2>
+        </div>
 
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            minLength={8}
-            required
-          />
-        </label>
+        <form onSubmit={onSubmit} className="form-grid">
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
 
-        {error ? <p className="error-text">{error}</p> : null}
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              minLength={8}
+              required
+            />
+          </label>
 
-        <button className="button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Signing in..." : "Sign in"}
-        </button>
-      </form>
+          {error ? <p className="error-text">{error}</p> : null}
 
-      <p className="muted-text">
-        Need an account? <Link to="/register">Create one</Link>
-      </p>
+          <button className="button" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+
+        <p className="muted-text auth-switcher">
+          Need an account? <Link to="/register">Create one</Link>
+        </p>
+      </div>
     </section>
   );
 }

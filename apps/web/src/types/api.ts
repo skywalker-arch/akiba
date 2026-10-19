@@ -62,6 +62,43 @@ export type GroupDetails = {
   memberCount: number;
 };
 
+export type LoanStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "DISBURSED"
+  | "ACTIVE"
+  | "OVERDUE"
+  | "CLOSED"
+  | "REJECTED"
+  | "DEFAULTED";
+
+export type Loan = {
+  id: string;
+  borrowerMembershipId: string;
+  principalAmount: number;
+  interestRate: number;
+  termMonths: number;
+  purpose: string | null;
+  disbursedAt: string | null;
+  dueAt: string | null;
+  status: LoanStatus;
+  createdAt: string;
+  updatedAt: string;
+  borrowerMembership: {
+    id: string;
+    role: string;
+    status: string;
+    joinedAt: string | null;
+    user: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string | null;
+    };
+  };
+};
+
 export type Contribution = {
   id: string;
   amount: number;
@@ -83,6 +120,95 @@ export type Contribution = {
       phone: string | null;
     };
   };
+};
+
+export type TransactionType =
+  | "DEPOSIT"
+  | "WITHDRAWAL"
+  | "TRANSFER_IN"
+  | "TRANSFER_OUT"
+  | "CONTRIBUTION"
+  | "LOAN_DISBURSEMENT"
+  | "LOAN_REPAYMENT"
+  | "ADJUSTMENT"
+  | "FEE"
+  | "INTEREST";
+
+export type TransactionStatus =
+  | "PENDING"
+  | "POSTED"
+  | "FAILED"
+  | "REVERSED";
+
+export type Transaction = {
+  id: string;
+  type: TransactionType;
+  status: TransactionStatus;
+  amount: number;
+  currency: string;
+  occurredAt: string;
+  description: string | null;
+  externalReference: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  wallet: {
+    id: string;
+    type: string;
+    groupId: string | null;
+    currency: string;
+    balance: number;
+    updatedAt: string;
+    group: {
+      id: string;
+      name: string;
+      code: string;
+      description: string | null;
+      isActive: boolean;
+    } | null;
+  };
+  contribution: {
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+    membership: {
+      id: string;
+      role: string;
+      status: string;
+      user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string | null;
+      };
+    };
+  } | null;
+  loan: {
+    id: string;
+    principalAmount: number;
+    interestRate: number;
+    termMonths: number;
+    status: string;
+    borrowerMembership: {
+      id: string;
+      user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string | null;
+      };
+    };
+  } | null;
+  loanRepayment: {
+    id: string;
+    amount: number;
+    status: string;
+    reference: string | null;
+    paidAt: string;
+  } | null;
 };
 
 export type ContributionDetails = {

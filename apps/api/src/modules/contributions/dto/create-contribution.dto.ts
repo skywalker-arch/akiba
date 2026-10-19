@@ -1,10 +1,12 @@
 import { Type } from 'class-transformer';
 import {
+  IsNotEmpty,
   IsOptional,
   IsPositive,
   IsString,
   Length,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 
 export class CreateContributionDto {
@@ -17,13 +19,20 @@ export class CreateContributionDto {
   @Length(3, 3)
   currency?: string;
 
-  @IsOptional()
   @IsString()
+  @MinLength(3)
   @MaxLength(100)
-  reference?: string;
+  reference!: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(500)
   notes?: string;
+}
+
+export class RejectContributionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
 }

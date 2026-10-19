@@ -10,6 +10,7 @@ import { LoginPage } from "./pages/login-page";
 import { NotFoundPage } from "./pages/not-found-page";
 import { ProfilePage } from "./pages/profile-page";
 import { RegisterPage } from "./pages/register-page";
+import { TransactionsPage } from "./pages/transactions-page";
 
 export const router = createBrowserRouter([
   {
@@ -49,6 +50,10 @@ export const router = createBrowserRouter([
           {
             path: "/groups/:groupId/members",
             element: <GroupMembersPage />,
+          },
+          {
+            path: "/transactions",
+            element: <TransactionsPage />,
           },
           {
             path: "/profile",

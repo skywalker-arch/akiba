@@ -6,8 +6,10 @@ import type {
   ContributionDetails,
   GroupDetails,
   GroupSummary,
+  Loan,
   MemberRole,
   MemberStatus,
+  Transaction,
   UserProfile,
 } from "../types/api";
 
@@ -113,15 +115,42 @@ export const contributionsApi = {
     payload: {
       amount: number;
       currency?: string;
-      reference?: string;
+      reference: string;
       notes?: string;
     },
   ) {
-    return apiRequest(apiUrl(`/groups/${groupId}/contributions`), {
-      method: "POST",
-      token,
-      body: payload,
-    });
+    return apiRequest<{ id: string; status: string; reference: string }>(
+      apiUrl(`/groups/${groupId}/contributions`),
+      {
+        method: "POST",
+        token,
+        body: payload,
+      },
+    );
+  },
+  approveContribution(token: string, groupId: string, contributionId: string) {
+    return apiRequest<{ id: string; status: string }>(
+      apiUrl(`/groups/${groupId}/contributions/${contributionId}/approve`),
+      {
+        method: "POST",
+        token,
+      },
+    );
+  },
+  rejectContribution(
+    token: string,
+    groupId: string,
+    contributionId: string,
+    reason: string,
+  ) {
+    return apiRequest<{ id: string; status: string; reason: string }>(
+      apiUrl(`/groups/${groupId}/contributions/${contributionId}/reject`),
+      {
+        method: "POST",
+        token,
+        body: { reason },
+      },
+    );
   },
   getContributionById(token: string, contributionId: string) {
     return apiRequest<ContributionDetails>(apiUrl(`/contributions/${contributionId}`), {
@@ -130,10 +159,53 @@ export const contributionsApi = {
   },
 };
 
-// Transaction and wallet information are accessible via contribution details,
-// which include nested transactions and wallet state from the existing backend.
+export const loansApi = {
+  getGroupLoans(token: string, groupId: string) {
+    return apiRequest<Loan[]>(apiUrl(`/groups/${groupId}/loans`), { token });
+  },
+  createLoan(
+    token: string,
+    groupId: string,
+    payload: {
+      principalAmount: number;
+      interestRate: number;
+      termMonths: number;
+      purpose?: string;
+    },
+  ) {
+    return apiRequest<Loan>(apiUrl(`/groups/${groupId}/loans`), {
+      method: "POST",
+      token,
+      body: payload,
+    });
+  },
+};
+
 export const financeApi = {
   getContributionWithWallet(token: string, contributionId: string) {
     return contributionsApi.getContributionById(token, contributionId);
+  },
+  getUserTransactions(
+    token: string,
+    filters?: { type?: string; status?: string; groupId?: string },
+  ) {
+    const params = new URLSearchParams();
+
+    if (filters?.type) {
+      params.set("type", filters.type);
+    }
+
+    if (filters?.status) {
+      params.set("status", filters.status);
+    }
+
+    if (filters?.groupId) {
+      params.set("groupId", filters.groupId);
+    }
+
+    const query = params.toString();
+    return apiRequest<Transaction[]>(apiUrl(`/transactions${query ? `?${query}` : ""}`), {
+      token,
+    });
   },
 };

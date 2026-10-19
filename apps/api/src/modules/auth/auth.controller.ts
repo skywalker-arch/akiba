@@ -7,27 +7,27 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
-	constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) {}
 
-	@Post('register')
-	register(@Body() body: RegisterDto): Promise<{ accessToken: string }> {
-		return this.authService.register(body);
-	}
+  @Post('register')
+  register(@Body() body: RegisterDto): Promise<{ accessToken: string }> {
+    return this.authService.register(body);
+  }
 
-	@Post('login')
-	login(@Body() body: LoginDto): Promise<{ accessToken: string }> {
-		return this.authService.login(body);
-	}
+  @Post('login')
+  login(@Body() body: LoginDto): Promise<{ accessToken: string }> {
+    return this.authService.login(body);
+  }
 
-	@UseGuards(JwtAuthGuard)
-	@Get('me')
-	me(@CurrentUser() user: { sub: string; email: string }): {
-		id: string;
-		email: string;
-	} {
-		return {
-			id: user.sub,
-			email: user.email,
-		};
-	}
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  me(@CurrentUser() user: { sub: string; email: string }): {
+    id: string;
+    email: string;
+  } {
+    return {
+      id: user.sub,
+      email: user.email,
+    };
+  }
 }
