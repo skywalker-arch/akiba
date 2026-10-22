@@ -75,17 +75,6 @@ export function GroupDetailPage() {
     };
   }, [loans]);
 
-  const deriveFallbackBalance = (items: Contribution[]) => {
-    if (items.length === 0) {
-      return { amount: 0, currency: "KES" };
-    }
-
-    return {
-      amount: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-      currency: "KES",
-    };
-  };
-
   async function loadGroupData() {
     if (!groupId || !token) {
       return;
@@ -97,18 +86,17 @@ export function GroupDetailPage() {
     setLoanError(null);
 
     try {
-      const [groupData, contributionsData, loansData] = await Promise.all([
+      const [groupData, contributionsData, loansData, currentBalance] = await Promise.all([
         groupsApi.getGroupById(token, groupId),
         contributionsApi.getGroupContributions(token, groupId),
         loansApi.getGroupLoans(token, groupId),
+        groupsApi.getGroupBalance(token, groupId),
       ]);
 
       setGroup(groupData);
       setContributions(contributionsData);
       setLoans(loansData);
-      setBalance((currentBalance) =>
-        currentBalance ?? deriveFallbackBalance(contributionsData),
-      );
+      setBalance(currentBalance);
     } catch (loadError) {
       const message =
         loadError instanceof Error ? loadError.message : "Failed to load group";
@@ -218,7 +206,13 @@ export function GroupDetailPage() {
     return <section className="panel">Group not found</section>;
   }
 
-  const contributionCount = contributions.length;
+  const confirmedContributionCount = contributions.filter(
+    (contribution) => contribution.status === "POSTED",
+  ).length;
+  const pendingContributionCount = contributions.filter(
+    (contribution) => contribution.status === "PENDING",
+  ).length;
+  const totalContributionCount = contributions.length;
   const memberCount = group.memberCount;
   const recentContributions = contributions.slice(0, 5);
 
@@ -248,8 +242,13 @@ export function GroupDetailPage() {
         </div>
 
         <div className="stat-card">
-          <p className="stat-label">Total Contributions</p>
-          <p className="stat-value">{contributionCount}</p>
+          <p className="stat-label">Confirmed Contributions</p>
+          <p className="stat-value">{confirmedContributionCount}</p>
+        </div>
+
+        <div className="stat-card">
+          <p className="stat-label">Pending Review</p>
+          <p className="stat-value">{pendingContributionCount}</p>
         </div>
 
         <div className="stat-card">
@@ -476,8 +475,8 @@ export function GroupDetailPage() {
         <section className="panel">
           <div className="section-header">
             <h2>Recent Contributions</h2>
-            {contributionCount > recentContributions.length && (
-              <span className="section-count">+{contributionCount - recentContributions.length} more</span>
+            {totalContributionCount > recentContributions.length && (
+              <span className="section-count">+{totalContributionCount - recentContributions.length} more</span>
             )}
           </div>
 
@@ -513,7 +512,7 @@ export function GroupDetailPage() {
             </ul>
           )}
 
-          {contributionCount > 0 && (
+          {confirmedContributionCount > 0 && (
             <Link to={`/groups/${groupId}/contributions`} className="link-button">
               View all contributions
             </Link>

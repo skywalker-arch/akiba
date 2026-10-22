@@ -76,6 +76,12 @@ export const groupsApi = {
   getGroupById(token: string, groupId: string) {
     return apiRequest<GroupDetails>(apiUrl(`/groups/${groupId}`), { token });
   },
+  getGroupBalance(token: string, groupId: string) {
+    return apiRequest<{ amount: number; currency: string }>(
+      apiUrl(`/groups/${groupId}/balance`),
+      { token },
+    );
+  },
   addMember(token: string, groupId: string, payload: { userId: string }) {
     return apiRequest(apiUrl(`/groups/${groupId}/members`), {
       method: "POST",

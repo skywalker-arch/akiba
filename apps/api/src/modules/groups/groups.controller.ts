@@ -43,6 +43,14 @@ export class GroupsController {
     return this.groupsService.getGroupById(user.sub, id);
   }
 
+  @Get(':id/balance')
+  getGroupBalance(
+    @CurrentUser() user: { sub: string; email: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.groupsService.getGroupBalance(user.sub, id);
+  }
+
   @Post(':id/members')
   addMember(
     @CurrentUser() user: { sub: string; email: string },

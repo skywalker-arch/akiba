@@ -30,7 +30,7 @@ export class ContributionsService {
     groupId: string,
     input: CreateContributionDto,
   ) {
-    const amount = Number(input.amount);
+    const amount = Number(input.amount);    
 
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Contribution amount must be greater than 0');

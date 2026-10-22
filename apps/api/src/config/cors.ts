@@ -13,12 +13,13 @@ export function normalizeOrigin(rawOrigin: string): string {
 }
 
 export function parseOrigins(value: string | undefined): string[] {
-  const defaults = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://0.0.0.0:5173",
-    "http://[::1]:5173",
-  ];
+  const defaultPorts = [3000, 3001, 4173, 5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180];
+  const defaults = defaultPorts.flatMap((port) => [
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    `http://0.0.0.0:${port}`,
+    `http://[::1]:${port}`,
+  ]);
 
   const configuredOrigins = (value ?? defaults.join(","))
     .split(",")
