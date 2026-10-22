@@ -149,6 +149,28 @@ export class GroupsService {
     };
   }
 
+  async getGroupBalance(userId: string, groupId: string) {
+    await this.ensureGroupMember(userId, groupId);
+
+    const wallet = await this.prisma.wallet.findUnique({
+      where: {
+        groupId_currency: {
+          groupId,
+          currency: 'KES',
+        },
+      },
+      select: {
+        balance: true,
+        currency: true,
+      },
+    });
+
+    return {
+      amount: Number(wallet?.balance ?? 0),
+      currency: wallet?.currency ?? 'KES',
+    };
+  }
+
   async addMember(userId: string, groupId: string, input: AddMemberDto) {
     await this.ensureGroupManager(userId, groupId);
 

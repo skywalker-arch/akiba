@@ -25,29 +25,37 @@ export function RouteShell() {
           <AkibaLogo variant="sidebar" />
         </div>
 
-        <nav className="sidebar-nav" aria-label="Primary navigation">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                isActive ? "nav-link nav-link-active" : "nav-link"
-              }
-            >
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
+        <div className="sidebar-nav-region">
+          <nav className="sidebar-nav" aria-label="Primary navigation">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  isActive ? "nav-link nav-link-active" : "nav-link"
+                }
+              >
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        </div>
 
-        <div className="sidebar-card">
-          <p className="eyebrow">Secure workspace</p>
-          <div className="sidebar-chip">
-            <span className="status-dot" aria-hidden="true" />
-            Protected
+        <div className="sidebar-footer">
+          <div className="sidebar-card">
+            <p className="eyebrow">Secure workspace</p>
+            <div className="sidebar-chip">
+              <span className="status-dot" aria-hidden="true" />
+              Protected
+            </div>
+            <button
+              type="button"
+              className="button button-secondary sidebar-logout"
+              onClick={handleLogout}
+            >
+              Log out
+            </button>
           </div>
-          <button type="button" className="button button-secondary sidebar-logout" onClick={handleLogout}>
-            Log out
-          </button>
         </div>
       </aside>
 
