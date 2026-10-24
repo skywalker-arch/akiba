@@ -175,18 +175,20 @@ export class GroupsService {
     await this.ensureGroupManager(userId, groupId);
 
     const user = await this.prisma.user.findUnique({
-      where: { id: input.userId },
-      select: { id: true },
+      where: { email: input.email },
+      select: { id: true, email: true, firstName: true, lastName: true },
     });
 
     if (!user) {
-      throw new NotFoundException('User to add was not found');
+      throw new NotFoundException(
+        'No registered account was found for that email address',
+      );
     }
 
     const existingMembership = await this.prisma.groupMembership.findUnique({
       where: {
         userId_groupId: {
-          userId: input.userId,
+          userId: user.id,
           groupId,
         },
       },
@@ -200,7 +202,7 @@ export class GroupsService {
     return this.prisma.groupMembership.create({
       data: {
         groupId,
-        userId: input.userId,
+        userId: user.id,
         role: MembershipRole.MEMBER,
         status: MembershipStatus.PENDING,
       },
@@ -219,6 +221,83 @@ export class GroupsService {
         },
       },
     });
+  }
+
+  async searchMemberCandidates(userId: string, groupId: string, query: string) {
+    await this.ensureGroupManager(userId, groupId);
+
+    const searchTerm = query.trim();
+
+    if (searchTerm.length < 3) {
+      throw new BadRequestException(
+        'Search query must be at least 3 characters long',
+      );
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          {
+            email: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+          {
+            firstName: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+          {
+            lastName: {
+              contains: searchTerm,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 10,
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (users.length === 0) {
+      return [];
+    }
+
+    const existingMemberships = await this.prisma.groupMembership.findMany({
+      where: {
+        groupId,
+        userId: {
+          in: users.map((candidate) => candidate.id),
+        },
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    const existingMemberIds = new Set(
+      existingMemberships.map((membership) => membership.userId),
+    );
+
+    return users
+      .filter((candidate) => !existingMemberIds.has(candidate.id))
+      .map((candidate) => ({
+        id: candidate.id,
+        email: candidate.email,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+      }));
   }
 
   async updateMember(

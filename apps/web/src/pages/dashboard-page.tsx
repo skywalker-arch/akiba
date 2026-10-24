@@ -190,6 +190,30 @@ export function DashboardPage() {
 
       <div className="panel">
         <div className="section-header">
+          <h2>Getting started</h2>
+        </div>
+        <p className="muted-text">
+          Managers (Owner or Admin) can approve contributions, manage members, and review loan requests.
+          Members can submit contributions and request loans.
+        </p>
+        <div className="quick-action-stack">
+          <span className="action-card">
+            <span className="action-card__title">Step 1: Join or create a group</span>
+            <span className="action-card__meta">Open Groups and create your savings circle, or ask a manager to add your account.</span>
+          </span>
+          <span className="action-card">
+            <span className="action-card__title">Step 2: Submit contributions</span>
+            <span className="action-card__meta">Use your payment reference so managers can review and post contributions safely.</span>
+          </span>
+          <span className="action-card">
+            <span className="action-card__title">Step 3: Track loans transparently</span>
+            <span className="action-card__meta">Loan requests, disbursements, and repayments are tracked with clear status updates.</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="section-header">
           <h2>Recent transactions</h2>
           <Link to="/transactions" className="text-link">View all</Link>
         </div>

@@ -6,6 +6,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { compare, hash } from 'bcrypt';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtPayload } from './types/jwt-payload.type';
@@ -24,24 +25,39 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new BadRequestException('Email is already registered');
+      throw new BadRequestException(
+        'An account with that email already exists. Try signing in instead.',
+      );
     }
 
     const password = await hash(input.password, 12);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: input.email,
-        password,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        phone: input.phone,
-      },
-      select: {
-        id: true,
-        email: true,
-      },
-    });
+    const user = await this.prisma.user
+      .create({
+        data: {
+          email: input.email,
+          password,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          phone: input.phone,
+        },
+        select: {
+          id: true,
+          email: true,
+        },
+      })
+      .catch((error) => {
+        if (
+          error instanceof PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new BadRequestException(
+            'A user account with these details already exists. Sign in or use different details.',
+          );
+        }
+
+        throw error;
+      });
 
     const payload: JwtPayload = {
       sub: user.id,

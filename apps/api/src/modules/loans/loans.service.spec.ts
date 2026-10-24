@@ -8,6 +8,9 @@ describe('LoansService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
     },
+    loanRepayment: {
+      findMany: jest.fn(),
+    },
   };
 
   const groupsService = {
@@ -70,7 +73,12 @@ describe('LoansService', () => {
         disbursedAt: null,
         dueAt: null,
         borrowerMembership: {
+          id: 'membership-1',
+          role: 'MEMBER',
+          status: 'ACTIVE',
+          joinedAt: null,
           user: {
+            id: 'user-1',
             firstName: 'Jane',
             lastName: 'Wanjiku',
             email: 'jane@example.com',
@@ -79,6 +87,7 @@ describe('LoansService', () => {
         },
       },
     ]);
+    prisma.loanRepayment.findMany.mockResolvedValue([]);
 
     const result = await service.getGroupLoans('user-1', 'group-1');
 
@@ -88,5 +97,6 @@ describe('LoansService', () => {
     );
     expect(prisma.loan.findMany).toHaveBeenCalled();
     expect(result).toHaveLength(1);
+    expect(result[0].financialSummary.outstandingAmount).toBe(13200);
   });
 });

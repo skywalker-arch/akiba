@@ -3,7 +3,12 @@ import { Link, useParams } from "react-router";
 import { useAuth } from "../context/auth-context";
 import { useToast } from "../context/toast-context";
 import { groupsApi, usersApi } from "../lib/api";
-import type { GroupDetails, MemberRole, MemberStatus } from "../types/api";
+import type {
+  GroupDetails,
+  MemberCandidate,
+  MemberRole,
+  MemberStatus,
+} from "../types/api";
 import "../styles/members-page.css";
 
 // ─── helpers ───────────────────────────────────────────────────────────────
@@ -40,12 +45,6 @@ function formatJoinedDate(iso: string | null): string | null {
   });
 }
 
-function isValidUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    value.trim(),
-  );
-}
-
 // ─── types ─────────────────────────────────────────────────────────────────
 
 type Membership = GroupDetails["memberships"][number];
@@ -72,7 +71,10 @@ export function GroupMembersPage() {
 
   // Add member form
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addUserId, setAddUserId] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<MemberCandidate[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<MemberCandidate | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [addFieldError, setAddFieldError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +124,9 @@ export function GroupMembersPage() {
   // Open add form and focus input
   function openAddForm() {
     setShowAddForm(true);
-    setAddUserId("");
+    setSearchQuery("");
+    setSearchResults([]);
+    setSelectedCandidate(null);
     setAddFieldError(null);
     // defer focus until rendered
     setTimeout(() => addInputRef.current?.focus(), 50);
@@ -130,8 +134,42 @@ export function GroupMembersPage() {
 
   function cancelAddForm() {
     setShowAddForm(false);
-    setAddUserId("");
+    setSearchQuery("");
+    setSearchResults([]);
+    setSelectedCandidate(null);
     setAddFieldError(null);
+  }
+
+  async function onSearchCandidates() {
+    if (!token || !groupId) return;
+
+    const trimmed = searchQuery.trim();
+
+    if (trimmed.length < 3) {
+      setAddFieldError("Enter at least 3 characters to search.");
+      return;
+    }
+
+    setIsSearching(true);
+    setAddFieldError(null);
+    setSelectedCandidate(null);
+
+    try {
+      const result = await groupsApi.searchMemberCandidates(token, groupId, trimmed);
+      setSearchResults(result);
+
+      if (result.length === 0) {
+        setAddFieldError(
+          "No registered user matched that search. Ask them to register first, then search again.",
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to search users";
+      setAddFieldError(msg);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
   }
 
   // ─── add member ───────────────────────────────────────────────────────
@@ -140,15 +178,8 @@ export function GroupMembersPage() {
     event.preventDefault();
     if (!token || !groupId) return;
 
-    const trimmed = addUserId.trim();
-
-    if (!trimmed) {
-      setAddFieldError("User ID is required");
-      return;
-    }
-
-    if (!isValidUuid(trimmed)) {
-      setAddFieldError("Enter a valid UUID (e.g. 8d79c8b0-…)");
+    if (!selectedCandidate) {
+      setAddFieldError("Search and choose a registered user before adding.");
       return;
     }
 
@@ -156,7 +187,9 @@ export function GroupMembersPage() {
     setIsAdding(true);
 
     try {
-      await groupsApi.addMember(token, groupId, { userId: trimmed });
+      await groupsApi.addMember(token, groupId, {
+        email: selectedCandidate.email,
+      });
       cancelAddForm();
       showToast("Member added successfully", "success");
       await refresh();
@@ -273,34 +306,71 @@ export function GroupMembersPage() {
         <section className="add-member-section" aria-label="Add a new member">
           <h2>Add member</h2>
           <p className="add-member-hint">
-            Enter the user's ID to add them to this group. The new member will be
-            added with <strong>Pending</strong> status — activate them once they are
-            ready to contribute.
+            Search for a registered user by email or name, select the correct
+            account, then add them. New members are added with
+            <strong> Pending</strong> status.
           </p>
 
           <form className="add-member-form" onSubmit={onAddMember} noValidate>
             <div className="add-member-field">
-              <label htmlFor="add-member-id">User ID</label>
+              <label htmlFor="add-member-search">Search user</label>
               <input
-                id="add-member-id"
+                id="add-member-search"
                 ref={addInputRef}
                 type="text"
                 inputMode="text"
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                value={addUserId}
+                placeholder="Email or name"
+                value={searchQuery}
                 onChange={(e) => {
-                  setAddUserId(e.target.value);
+                  setSearchQuery(e.target.value);
+                  setSelectedCandidate(null);
+                  setSearchResults([]);
                   if (addFieldError) setAddFieldError(null);
                 }}
-                disabled={isAdding}
+                disabled={isAdding || isSearching}
                 aria-invalid={Boolean(addFieldError)}
-                aria-describedby={addFieldError ? "add-member-id-error" : undefined}
+                aria-describedby={addFieldError ? "add-member-search-error" : undefined}
                 className={addFieldError ? "input-error" : ""}
                 autoComplete="off"
                 spellCheck={false}
               />
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => void onSearchCandidates()}
+                disabled={isAdding || isSearching || searchQuery.trim().length < 3}
+              >
+                {isSearching ? "Searching..." : "Search"}
+              </button>
+
+              {searchResults.length > 0 ? (
+                <ul className="list" aria-label="Search results">
+                  {searchResults.map((candidate) => {
+                    const isSelected = selectedCandidate?.id === candidate.id;
+                    return (
+                      <li key={candidate.id}>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          aria-pressed={isSelected}
+                          onClick={() => setSelectedCandidate(candidate)}
+                        >
+                          {candidate.firstName} {candidate.lastName} ({candidate.email})
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+
+              {selectedCandidate ? (
+                <p className="muted-text">
+                  Selected: {selectedCandidate.firstName} {selectedCandidate.lastName} ({selectedCandidate.email})
+                </p>
+              ) : null}
+
               {addFieldError && (
-                <p id="add-member-id-error" className="field-error" role="alert">
+                <p id="add-member-search-error" className="field-error" role="alert">
                   {addFieldError}
                 </p>
               )}
@@ -318,7 +388,7 @@ export function GroupMembersPage() {
               <button
                 type="submit"
                 className="button"
-                disabled={isAdding || !addUserId.trim()}
+                disabled={isAdding || !selectedCandidate}
               >
                 {isAdding ? "Adding…" : "Add member"}
               </button>

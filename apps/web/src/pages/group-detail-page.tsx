@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router";
 import { useAuth } from "../context/auth-context";
 import { useToast } from "../context/toast-context";
 import { ContributionModal } from "../components/contribution-modal";
-import { contributionsApi, groupsApi, loansApi } from "../lib/api";
+import { contributionsApi, groupsApi, loansApi, usersApi } from "../lib/api";
 import type { Contribution, GroupDetails, Loan } from "../types/api";
 import "../styles/group-detail.css";
 
@@ -24,6 +24,7 @@ export function GroupDetailPage() {
   const { show: showToast } = useToast();
 
   const [group, setGroup] = useState<GroupDetails | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [contributions, setContributions] = useState<Contribution[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [balance, setBalance] = useState<{ amount: number; currency: string } | null>(null);
@@ -35,6 +36,7 @@ export function GroupDetailPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoanFormVisible, setIsLoanFormVisible] = useState(false);
   const [isSubmittingLoan, setIsSubmittingLoan] = useState(false);
+  const [isProcessingLoanId, setIsProcessingLoanId] = useState<string | null>(null);
   const [expandedLoanId, setExpandedLoanId] = useState<string | null>(null);
   const [loanForm, setLoanForm] = useState({
     principalAmount: "",
@@ -93,10 +95,13 @@ export function GroupDetailPage() {
         groupsApi.getGroupBalance(token, groupId),
       ]);
 
+      const me = await usersApi.getMe(token);
+
       setGroup(groupData);
       setContributions(contributionsData);
       setLoans(loansData);
       setBalance(currentBalance);
+      setCurrentUserId(me.id);
     } catch (loadError) {
       const message =
         loadError instanceof Error ? loadError.message : "Failed to load group";
@@ -215,6 +220,104 @@ export function GroupDetailPage() {
   const totalContributionCount = contributions.length;
   const memberCount = group.memberCount;
   const recentContributions = contributions.slice(0, 5);
+  const currentMembership =
+    group.memberships.find((member) => member.user.id === currentUserId) ?? null;
+  const isManager =
+    currentMembership?.role === "OWNER" || currentMembership?.role === "ADMIN";
+
+  async function onReviewLoan(loanId: string, decision: "APPROVED" | "REJECTED") {
+    if (!groupId || !token) {
+      return;
+    }
+
+    const reason =
+      decision === "REJECTED"
+        ? window.prompt("Optional reason for rejecting this loan request:") ?? ""
+        : undefined;
+
+    setLoanError(null);
+    setLoanSuccess(null);
+    setIsProcessingLoanId(loanId);
+
+    try {
+      await loansApi.reviewLoan(token, groupId, loanId, {
+        decision,
+        reason: reason?.trim() || undefined,
+      });
+      setLoanSuccess(`Loan ${decision === "APPROVED" ? "approved" : "rejected"} successfully.`);
+      await loadGroupData();
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error ? submitError.message : "Failed to review loan";
+      setLoanError(message);
+    } finally {
+      setIsProcessingLoanId(null);
+    }
+  }
+
+  async function onDisburseLoan(loanId: string) {
+    if (!groupId || !token) {
+      return;
+    }
+
+    const reference = window.prompt("Disbursement reference (required)");
+    if (!reference || !reference.trim()) {
+      return;
+    }
+
+    setLoanError(null);
+    setLoanSuccess(null);
+    setIsProcessingLoanId(loanId);
+
+    try {
+      await loansApi.disburseLoan(token, groupId, loanId, {
+        reference: reference.trim(),
+      });
+      setLoanSuccess("Loan disbursed successfully.");
+      await loadGroupData();
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error ? submitError.message : "Failed to disburse loan";
+      setLoanError(message);
+    } finally {
+      setIsProcessingLoanId(null);
+    }
+  }
+
+  async function onRecordRepayment(loanId: string) {
+    if (!groupId || !token) {
+      return;
+    }
+
+    const amountRaw = window.prompt("Repayment amount");
+    const reference = window.prompt("Repayment reference (required)");
+
+    const amount = Number(amountRaw);
+
+    if (!Number.isFinite(amount) || amount <= 0 || !reference || !reference.trim()) {
+      setLoanError("Repayment requires a valid amount and reference.");
+      return;
+    }
+
+    setLoanError(null);
+    setLoanSuccess(null);
+    setIsProcessingLoanId(loanId);
+
+    try {
+      await loansApi.createRepayment(token, groupId, loanId, {
+        amount,
+        reference: reference.trim(),
+      });
+      setLoanSuccess("Repayment recorded successfully.");
+      await loadGroupData();
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error ? submitError.message : "Failed to record repayment";
+      setLoanError(message);
+    } finally {
+      setIsProcessingLoanId(null);
+    }
+  }
 
   return (
     <div className="group-detail-container">
@@ -427,9 +530,62 @@ export function GroupDetailPage() {
                       <span className="metric-label">Term</span>
                       <strong>{loan.termMonths} mo</strong>
                     </div>
+                    <div>
+                      <span className="metric-label">Outstanding</span>
+                      <strong>
+                        {formatCurrency(
+                          Number(loan.financialSummary?.outstandingAmount ?? loan.principalAmount),
+                        )}
+                      </strong>
+                    </div>
                   </div>
 
                   {loan.purpose ? <p className="loan-purpose">Purpose: {loan.purpose}</p> : null}
+
+                  <div className="inline-actions">
+                    {isManager && loan.status === "REQUESTED" ? (
+                      <>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={() => void onReviewLoan(loan.id, "REJECTED")}
+                          disabled={isProcessingLoanId === loan.id}
+                        >
+                          {isProcessingLoanId === loan.id ? "Processing..." : "Reject"}
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={() => void onReviewLoan(loan.id, "APPROVED")}
+                          disabled={isProcessingLoanId === loan.id}
+                        >
+                          {isProcessingLoanId === loan.id ? "Processing..." : "Approve"}
+                        </button>
+                      </>
+                    ) : null}
+
+                    {isManager && loan.status === "APPROVED" ? (
+                      <button
+                        type="button"
+                        className="button"
+                        onClick={() => void onDisburseLoan(loan.id)}
+                        disabled={isProcessingLoanId === loan.id}
+                      >
+                        {isProcessingLoanId === loan.id ? "Processing..." : "Mark disbursed"}
+                      </button>
+                    ) : null}
+
+                    {(loan.status === "DISBURSED" || loan.status === "ACTIVE" || loan.status === "OVERDUE") ? (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        onClick={() => void onRecordRepayment(loan.id)}
+                        disabled={isProcessingLoanId === loan.id}
+                      >
+                        {isProcessingLoanId === loan.id ? "Processing..." : "Record repayment"}
+                      </button>
+                    ) : null}
+                  </div>
 
                   <button
                     type="button"
