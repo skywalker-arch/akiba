@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -58,6 +59,15 @@ export class GroupsController {
     @Body() body: AddMemberDto,
   ) {
     return this.groupsService.addMember(user.sub, id, body);
+  }
+
+  @Get(':id/member-candidates')
+  searchMemberCandidates(
+    @CurrentUser() user: { sub: string; email: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query('query') query: string,
+  ) {
+    return this.groupsService.searchMemberCandidates(user.sub, id, query ?? '');
   }
 
   @Patch(':id/members/:memberId')

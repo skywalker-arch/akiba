@@ -5,6 +5,7 @@ import type {
   Contribution,
   ContributionDetails,
   GroupDetails,
+  MemberCandidate,
   GroupSummary,
   Loan,
   MemberRole,
@@ -82,7 +83,14 @@ export const groupsApi = {
       { token },
     );
   },
-  addMember(token: string, groupId: string, payload: { userId: string }) {
+  searchMemberCandidates(token: string, groupId: string, query: string) {
+    const encoded = encodeURIComponent(query);
+    return apiRequest<MemberCandidate[]>(
+      apiUrl(`/groups/${groupId}/member-candidates?query=${encoded}`),
+      { token },
+    );
+  },
+  addMember(token: string, groupId: string, payload: { email: string }) {
     return apiRequest(apiUrl(`/groups/${groupId}/members`), {
       method: "POST",
       token,
@@ -169,6 +177,11 @@ export const loansApi = {
   getGroupLoans(token: string, groupId: string) {
     return apiRequest<Loan[]>(apiUrl(`/groups/${groupId}/loans`), { token });
   },
+  getLoanById(token: string, groupId: string, loanId: string) {
+    return apiRequest<Loan>(apiUrl(`/groups/${groupId}/loans/${loanId}`), {
+      token,
+    });
+  },
   createLoan(
     token: string,
     groupId: string,
@@ -180,6 +193,47 @@ export const loansApi = {
     },
   ) {
     return apiRequest<Loan>(apiUrl(`/groups/${groupId}/loans`), {
+      method: "POST",
+      token,
+      body: payload,
+    });
+  },
+  reviewLoan(
+    token: string,
+    groupId: string,
+    loanId: string,
+    payload: { decision: "APPROVED" | "REJECTED"; reason?: string },
+  ) {
+    return apiRequest<Loan>(apiUrl(`/groups/${groupId}/loans/${loanId}/review`), {
+      method: "PATCH",
+      token,
+      body: payload,
+    });
+  },
+  disburseLoan(
+    token: string,
+    groupId: string,
+    loanId: string,
+    payload: { amount?: number; reference: string; notes?: string },
+  ) {
+    return apiRequest<Loan>(apiUrl(`/groups/${groupId}/loans/${loanId}/disburse`), {
+      method: "POST",
+      token,
+      body: payload,
+    });
+  },
+  createRepayment(
+    token: string,
+    groupId: string,
+    loanId: string,
+    payload: { amount: number; reference: string; paidAt?: string; notes?: string },
+  ) {
+    return apiRequest<{
+      repaymentId: string;
+      loanId: string;
+      status: string;
+      outstandingAmount: number;
+    }>(apiUrl(`/groups/${groupId}/loans/${loanId}/repayments`), {
       method: "POST",
       token,
       body: payload,

@@ -62,6 +62,13 @@ export type GroupDetails = {
   memberCount: number;
 };
 
+export type MemberCandidate = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+};
+
 export type LoanStatus =
   | "REQUESTED"
   | "APPROVED"
@@ -96,6 +103,15 @@ export type Loan = {
       email: string;
       phone: string | null;
     };
+  };
+  financialSummary?: {
+    principalAmount: number;
+    totalInterest: number;
+    totalRepayable: number;
+    installmentAmount: number;
+    repaidAmount: number;
+    outstandingAmount: number;
+    interestMethod: string;
   };
 };
 
