@@ -344,7 +344,18 @@ describe('ContributionsService', () => {
         groupId: 'group-1',
       },
     });
-    prisma.contribution.update.mockResolvedValue({
+    prisma.contribution.updateMany.mockResolvedValue({ count: 1 });
+    prisma.contribution.findUnique
+      .mockResolvedValueOnce({
+        id: 'contribution-1',
+        amount: 2500,
+        currency: 'KES',
+        status: ContributionStatus.PENDING,
+        membership: {
+          groupId: 'group-1',
+        },
+      })
+      .mockResolvedValueOnce({
       id: 'contribution-1',
       amount: 2500,
       currency: 'KES',

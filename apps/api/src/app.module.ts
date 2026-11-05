@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { HealthController } from './health/health.controller';
@@ -10,6 +11,7 @@ import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', '.env.local'],

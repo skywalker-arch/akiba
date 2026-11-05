@@ -14,6 +14,7 @@ import {
   WalletType,
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { GroupsService } from '../groups/groups.service';
 import { CreateLoanRepaymentDto } from './dto/create-loan-repayment.dto';
@@ -27,6 +28,102 @@ export class LoansService {
     private readonly prisma: PrismaService,
     private readonly groupsService: GroupsService,
   ) {}
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async markOverdueLoans() {
+    const now = new Date();
+
+    const candidates = await this.prisma.loan.findMany({
+      where: {
+        status: {
+          in: [LoanStatus.DISBURSED, LoanStatus.ACTIVE],
+        },
+        dueAt: {
+          not: null,
+          lte: now,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    let markedCount = 0;
+
+    for (const candidate of candidates) {
+      const wasMarked = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "Loan" WHERE "id" = ${candidate.id} FOR UPDATE`,
+        );
+
+        const loan = await tx.loan.findFirst({
+          where: {
+            id: candidate.id,
+            status: {
+              in: [LoanStatus.DISBURSED, LoanStatus.ACTIVE],
+            },
+            dueAt: {
+              not: null,
+              lte: now,
+            },
+          },
+          select: {
+            id: true,
+            principalAmount: true,
+            interestRate: true,
+            termMonths: true,
+            disbursedAt: true,
+            dueAt: true,
+            repayments: {
+              where: {
+                status: RepaymentStatus.POSTED,
+              },
+              select: {
+                amount: true,
+              },
+            },
+          },
+        });
+
+        if (!loan) {
+          return false;
+        }
+
+        const summary = this.calculateFinancialSummary(
+          loan,
+          loan.repayments,
+        );
+
+        if (summary.outstandingAmount <= 0) {
+          return false;
+        }
+
+        const result = await tx.loan.updateMany({
+          where: {
+            id: loan.id,
+            status: {
+              in: [LoanStatus.DISBURSED, LoanStatus.ACTIVE],
+            },
+            dueAt: {
+              not: null,
+              lte: now,
+            },
+          },
+          data: {
+            status: LoanStatus.OVERDUE,
+          },
+        });
+
+        return result.count > 0;
+      });
+
+      if (wasMarked) {
+        markedCount += 1;
+      }
+    }
+
+    return markedCount;
+  }
 
   async createLoan(userId: string, groupId: string, input: CreateLoanDto) {
     const membership = await this.groupsService.ensureActiveGroupMember(
@@ -318,12 +415,27 @@ export class LoansService {
       input.decision === 'APPROVED' ? LoanStatus.APPROVED : LoanStatus.REJECTED;
 
     return this.prisma.$transaction(async (tx) => {
-      const updatedLoan = await tx.loan.update({
-        where: { id: loanId },
+      const claim = await tx.loan.updateMany({
+        where: {
+          id: loanId,
+          status: LoanStatus.REQUESTED,
+        },
         data: {
           status,
         },
       });
+
+      if (claim.count !== 1) {
+        throw new ConflictException('Only requested loans can be reviewed');
+      }
+
+      const updatedLoan = await tx.loan.findUnique({
+        where: { id: loanId },
+      });
+
+      if (!updatedLoan) {
+        throw new NotFoundException('Loan not found');
+      }
 
       await this.createAuditTransaction(tx, {
         groupId,
@@ -355,6 +467,10 @@ export class LoansService {
     input: DisburseLoanDto,
   ) {
     await this.groupsService.ensureGroupManager(userId, groupId);
+    const reference = this.normalizeFinancialReference(
+      input.reference,
+      'Disbursement reference is required',
+    );
 
     return this.prisma.$transaction(async (tx) => {
       const loan = await tx.loan.findFirst({
@@ -394,6 +510,14 @@ export class LoansService {
         (input.amount ?? Number(loan.principalAmount)).toFixed(2),
       );
 
+      const principalAmount = new Prisma.Decimal(loan.principalAmount);
+
+      if (!disbursementAmount.equals(principalAmount)) {
+        throw new BadRequestException(
+          'Disbursement amount must exactly match the approved principal amount',
+        );
+      }
+
       const groupWallet = await tx.wallet.upsert({
         where: {
           groupId_currency: {
@@ -410,9 +534,24 @@ export class LoansService {
         update: {},
       });
 
-      if (groupWallet.balance.lessThan(disbursementAmount)) {
-        throw new BadRequestException(
-          'Insufficient group wallet balance for disbursement',
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "Wallet" WHERE "id" = ${groupWallet.id} FOR UPDATE`,
+      );
+
+      const existingDisbursement = await tx.transaction.findFirst({
+        where: {
+          type: TransactionType.LOAN_DISBURSEMENT,
+          externalReference: reference,
+          wallet: {
+            groupId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (existingDisbursement) {
+        throw new ConflictException(
+          'A loan disbursement with this reference already exists',
         );
       }
 
@@ -420,14 +559,49 @@ export class LoansService {
       const dueAt = new Date(now);
       dueAt.setMonth(dueAt.getMonth() + loan.termMonths);
 
-      const updatedLoan = await tx.loan.update({
-        where: { id: loan.id },
+      const claim = await tx.loan.updateMany({
+        where: {
+          id: loan.id,
+          status: LoanStatus.APPROVED,
+        },
         data: {
           status: LoanStatus.DISBURSED,
           disbursedAt: now,
           dueAt,
         },
       });
+
+      if (claim.count !== 1) {
+        throw new ConflictException('Only approved loans can be disbursed');
+      }
+
+      const walletDebit = await tx.wallet.updateMany({
+        where: {
+          id: groupWallet.id,
+          balance: {
+            gte: disbursementAmount,
+          },
+        },
+        data: {
+          balance: {
+            decrement: disbursementAmount,
+          },
+        },
+      });
+
+      if (walletDebit.count !== 1) {
+        throw new BadRequestException(
+          'Insufficient group wallet balance for disbursement',
+        );
+      }
+
+      const updatedLoan = await tx.loan.findUnique({
+        where: { id: loan.id },
+      });
+
+      if (!updatedLoan) {
+        throw new NotFoundException('Loan not found');
+      }
 
       await tx.transaction.create({
         data: {
@@ -438,22 +612,11 @@ export class LoansService {
           amount: disbursementAmount,
           currency: groupWallet.currency,
           occurredAt: now,
-          externalReference: input.reference.trim(),
+          externalReference: reference,
           description: `Loan disbursement to ${loan.borrowerMembership.user.firstName} ${loan.borrowerMembership.user.lastName}`,
           metadata: {
             actorUserId: userId,
             notes: input.notes?.trim() || null,
-          },
-        },
-      });
-
-      await tx.wallet.update({
-        where: {
-          id: groupWallet.id,
-        },
-        data: {
-          balance: {
-            decrement: disbursementAmount,
           },
         },
       });
@@ -475,12 +638,21 @@ export class LoansService {
     loanId: string,
     input: CreateLoanRepaymentDto,
   ) {
-    const actorMembership = await this.groupsService.ensureGroupMember(
+    const actorMembership = await this.groupsService.ensureGroupManager(
       userId,
       groupId,
     );
+    const reference = this.normalizeFinancialReference(
+      input.reference,
+      'Repayment reference is required',
+    );
+    const paidAt = this.normalizePaidAt(input.paidAt);
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT 1 FROM "Loan" WHERE id = ${loanId} FOR UPDATE`,
+      );
+
       const loan = await tx.loan.findFirst({
         where: {
           id: loanId,
@@ -494,6 +666,7 @@ export class LoansService {
           principalAmount: true,
           interestRate: true,
           termMonths: true,
+          dueAt: true,
           borrowerMembership: {
             select: {
               id: true,
@@ -523,7 +696,7 @@ export class LoansService {
         interestRate: loan.interestRate,
         termMonths: loan.termMonths,
         disbursedAt: null,
-        dueAt: null,
+        dueAt: loan.dueAt,
       },
       await tx.loanRepayment.findMany({
         where: {
@@ -541,8 +714,6 @@ export class LoansService {
         );
       }
 
-      const paidAt = input.paidAt ? new Date(input.paidAt) : new Date();
-
       const repayment = await tx.loanRepayment
         .create({
           data: {
@@ -552,7 +723,7 @@ export class LoansService {
             amount: repaymentAmount,
             paidAt,
             status: RepaymentStatus.POSTED,
-            reference: input.reference.trim(),
+            reference,
             notes: input.notes?.trim() || undefined,
           },
         })
@@ -595,7 +766,7 @@ export class LoansService {
           amount: repaymentAmount,
           currency: groupWallet.currency,
           occurredAt: paidAt,
-          externalReference: repayment.reference,
+          externalReference: reference,
           description: 'Loan repayment',
           metadata: {
             actorUserId: userId,
@@ -632,10 +803,16 @@ export class LoansService {
         allPostedRepayments,
       );
 
+      const isOverdue =
+        loan.status === LoanStatus.OVERDUE ||
+        (loan.dueAt !== null && loan.dueAt <= new Date());
+
       const nextStatus =
         nextSummary.outstandingAmount <= 0
           ? LoanStatus.CLOSED
-          : LoanStatus.ACTIVE;
+          : isOverdue
+            ? LoanStatus.OVERDUE
+            : LoanStatus.ACTIVE;
 
       await tx.loan.update({
         where: { id: loan.id },
@@ -651,6 +828,36 @@ export class LoansService {
         outstandingAmount: nextSummary.outstandingAmount,
       };
     });
+  }
+
+  private normalizeFinancialReference(reference: string, emptyMessage: string) {
+    const normalized = reference.trim();
+
+    if (!normalized) {
+      throw new BadRequestException(emptyMessage);
+    }
+
+    if (normalized.length < 3 || normalized.length > 100) {
+      throw new BadRequestException(
+        'Reference must be between 3 and 100 characters',
+      );
+    }
+
+    return normalized;
+  }
+
+  private normalizePaidAt(paidAt?: string) {
+    const resolved = paidAt ? new Date(paidAt) : new Date();
+
+    if (Number.isNaN(resolved.getTime())) {
+      throw new BadRequestException('Paid date is invalid');
+    }
+
+    if (resolved.getTime() > Date.now()) {
+      throw new BadRequestException('Paid date cannot be in the future');
+    }
+
+    return resolved;
   }
 
   private calculateFinancialSummary(
