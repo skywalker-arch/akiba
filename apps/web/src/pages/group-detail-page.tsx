@@ -232,8 +232,14 @@ export function GroupDetailPage() {
 
     const reason =
       decision === "REJECTED"
-        ? window.prompt("Optional reason for rejecting this loan request:") ?? ""
+        ? window.prompt("Reason for rejecting this loan request (required):") ?? ""
         : undefined;
+    const trimmedReason = reason?.trim();
+
+    if (decision === "REJECTED" && !trimmedReason) {
+      setLoanError("A rejection reason is required.");
+      return;
+    }
 
     setLoanError(null);
     setLoanSuccess(null);
@@ -242,7 +248,7 @@ export function GroupDetailPage() {
     try {
       await loansApi.reviewLoan(token, groupId, loanId, {
         decision,
-        reason: reason?.trim() || undefined,
+        reason: trimmedReason || undefined,
       });
       setLoanSuccess(`Loan ${decision === "APPROVED" ? "approved" : "rejected"} successfully.`);
       await loadGroupData();
@@ -575,7 +581,7 @@ export function GroupDetailPage() {
                       </button>
                     ) : null}
 
-                    {(loan.status === "DISBURSED" || loan.status === "ACTIVE" || loan.status === "OVERDUE") ? (
+                    {isManager && (loan.status === "DISBURSED" || loan.status === "ACTIVE" || loan.status === "OVERDUE") ? (
                       <button
                         type="button"
                         className="button button-secondary"

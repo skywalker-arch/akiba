@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { LoanStatus } from '@prisma/client';
 import { LoansService } from './loans.service';
 
@@ -7,7 +7,9 @@ describe('LoansService', () => {
     loan: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
     },
+    $transaction: jest.fn(),
     loanRepayment: {
       findMany: jest.fn(),
     },
@@ -16,6 +18,7 @@ describe('LoansService', () => {
   const groupsService = {
     ensureActiveGroupMember: jest.fn(),
     ensureGroupMember: jest.fn(),
+    ensureGroupManager: jest.fn(),
   };
 
   beforeEach(() => {
@@ -99,4 +102,126 @@ describe('LoansService', () => {
     expect(result).toHaveLength(1);
     expect(result[0].financialSummary.outstandingAmount).toBe(13200);
   });
+
+  it('prevents reviewing a loan that has already been claimed', async () => {
+    const service = new LoansService(prisma as any, groupsService as any);
+
+    groupsService.ensureGroupManager.mockResolvedValue({
+      id: 'manager-membership-1',
+    });
+
+    prisma.loan.findFirst.mockResolvedValue({
+      id: 'loan-1',
+      status: LoanStatus.REQUESTED,
+      borrowerMembership: {
+        userId: 'borrower-1',
+        user: {
+          firstName: 'Jane',
+          lastName: 'Wanjiku',
+        },
+      },
+    });
+
+    const tx = {
+      loan: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      wallet: {
+        upsert: jest.fn(),
+      },
+      transaction: {
+        create: jest.fn(),
+      },
+    };
+
+    prisma.$transaction.mockImplementation((callback: any) => callback(tx));
+
+    await expect(
+      service.reviewLoan('manager-1', 'group-1', 'loan-1', {
+        decision: 'APPROVED',
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    expect(tx.loan.updateMany).toHaveBeenCalled();
+    expect(tx.wallet.upsert).not.toHaveBeenCalled();
+    expect(tx.transaction.create).not.toHaveBeenCalled();
+  });
+
+  describe('markOverdueLoans', () => {
+    const overdueLoan = {
+      id: 'loan-1',
+      principalAmount: 10000,
+      interestRate: 10,
+      termMonths: 6,
+      disbursedAt: new Date('2026-01-01T00:00:00Z'),
+      dueAt: new Date('2026-02-01T00:00:00Z'),
+      repayments: [],
+    };
+
+    const setupSchedulerTransaction = (loan: any) => {
+      const tx = {
+        $queryRaw: jest.fn(),
+        loan: {
+          findFirst: jest.fn().mockResolvedValue(loan),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+      };
+
+      prisma.$transaction.mockImplementation(
+        (callback: any) => callback(tx),
+      );
+
+      return tx;
+    };
+
+    it('marks an overdue loan with an outstanding balance as OVERDUE', async () => {
+      const service = new LoansService(prisma as any, groupsService as any);
+      prisma.loan.findMany.mockResolvedValue([{ id: 'loan-1' }]);
+
+      const tx = setupSchedulerTransaction({
+        ...overdueLoan,
+        repayments: [{ amount: 1000 }],
+      });
+
+      const result = await service.markOverdueLoans();
+
+      expect(result).toBe(1);
+      expect(tx.$queryRaw).toHaveBeenCalled();
+      expect(tx.loan.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'loan-1' }),
+          data: { status: LoanStatus.OVERDUE },
+        }),
+      );
+    });
+
+    it('does not mark a fully repaid loan as OVERDUE', async () => {
+      const service = new LoansService(prisma as any, groupsService as any);
+      prisma.loan.findMany.mockResolvedValue([{ id: 'loan-1' }]);
+
+      const tx = setupSchedulerTransaction({
+        ...overdueLoan,
+        repayments: [{ amount: 11000 }],
+      });
+
+      const result = await service.markOverdueLoans();
+
+      expect(result).toBe(0);
+      expect(tx.loan.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not update a loan that is no longer eligible after locking', async () => {
+      const service = new LoansService(prisma as any, groupsService as any);
+      prisma.loan.findMany.mockResolvedValue([{ id: 'loan-1' }]);
+
+      const tx = setupSchedulerTransaction(null);
+
+      const result = await service.markOverdueLoans();
+
+      expect(result).toBe(0);
+      expect(tx.loan.findFirst).toHaveBeenCalled();
+      expect(tx.loan.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
 });

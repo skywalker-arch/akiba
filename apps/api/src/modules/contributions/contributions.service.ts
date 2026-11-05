@@ -262,15 +262,32 @@ export class ContributionsService {
         throw new ConflictException('Only pending contributions can be rejected');
       }
 
-      const updatedContribution = await tx.contribution.update({
-        where: { id: contributionId },
+      const reviewedAt = new Date();
+
+      const claim = await tx.contribution.updateMany({
+        where: {
+          id: contributionId,
+          status: ContributionStatus.PENDING,
+        },
         data: {
           status: ContributionStatus.REJECTED,
           reviewedById: userId,
           reviewReason: reason,
-          reviewedAt: new Date(),
+          reviewedAt,
         },
       });
+
+      if (claim.count !== 1) {
+        throw new ConflictException('This contribution has already been reviewed');
+      }
+
+      const updatedContribution = await tx.contribution.findUnique({
+        where: { id: contributionId },
+      });
+
+      if (!updatedContribution) {
+        throw new NotFoundException('Contribution not found');
+      }
 
       return {
         ...updatedContribution,

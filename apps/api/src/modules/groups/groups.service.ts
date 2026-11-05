@@ -404,8 +404,12 @@ export class GroupsService {
       );
     }
 
-    await this.prisma.groupMembership.delete({
+    await this.prisma.groupMembership.update({
       where: { id: memberId },
+      data: {
+        status: MembershipStatus.LEFT,
+        leftAt: new Date(),
+      },
     });
   }
 
@@ -461,13 +465,17 @@ export class GroupsService {
       throw new ForbiddenException('You are not a member of this group');
     }
 
+    if (membership.status !== MembershipStatus.ACTIVE) {
+      throw new ForbiddenException(
+        'Only ACTIVE group managers can perform this action',
+      );
+    }
+
     if (
       membership.role !== MembershipRole.OWNER &&
       membership.role !== MembershipRole.ADMIN
     ) {
-      throw new ForbiddenException(
-        'Only OWNER or ADMIN can manage group members',
-      );
+      throw new ForbiddenException('Only OWNER or ADMIN can perform this action');
     }
 
     return membership;
