@@ -9,12 +9,15 @@ import {
   ContributionStatus,
   MembershipRole,
   MembershipStatus,
+  NotificationType,
+  ObligationStatus,
   Prisma,
   TransactionStatus,
   TransactionType,
   WalletType,
 } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   CreateContributionDto,
@@ -23,101 +26,131 @@ import {
 
 @Injectable()
 export class ContributionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async createContribution(
     userId: string,
     groupId: string,
     input: CreateContributionDto,
   ) {
-    const amount = Number(input.amount);    
+    const amount = Number(input.amount);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      throw new BadRequestException('Contribution amount must be greater than 0');
+      throw new BadRequestException(
+        'Contribution amount must be greater than 0',
+      );
     }
 
     const currency = this.normalizeCurrency(input.currency);
     const reference = this.normalizeReference(input.reference);
 
-    return this.prisma.$transaction(async (tx) => {
-      const membership = await tx.groupMembership.findUnique({
-        where: {
-          userId_groupId: {
-            userId,
-            groupId,
-          },
-        },
-        select: {
-          id: true,
-          status: true,
-          group: {
-            select: {
-              id: true,
-              name: true,
+    const created = await this.prisma
+      .$transaction(async (tx) => {
+        const membership = await tx.groupMembership.findUnique({
+          where: {
+            userId_groupId: {
+              userId,
+              groupId,
             },
           },
-        },
+          select: {
+            id: true,
+            status: true,
+            group: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        });
+
+        if (!membership || membership.status !== MembershipStatus.ACTIVE) {
+          throw new ForbiddenException(
+            'Only ACTIVE group members can create contributions',
+          );
+        }
+
+        const existingContribution = await tx.contribution.findUnique({
+          where: { reference },
+          select: { id: true },
+        });
+
+        if (existingContribution) {
+          throw new ConflictException('Contribution reference already exists');
+        }
+
+        const contribution = await tx.contribution.create({
+          data: {
+            membershipId: membership.id,
+            amount: new Prisma.Decimal(amount.toFixed(2)),
+            currency,
+            status: ContributionStatus.PENDING,
+            contributedAt: new Date(),
+            reference,
+            notes: input.notes?.trim() || undefined,
+          },
+        });
+
+        return {
+          groupName: membership.group.name,
+          ...contribution,
+          amount: Number(contribution.amount),
+          status: contribution.status,
+          wallet: null,
+          transaction: null,
+        };
+      })
+      .catch((error) => {
+        if (
+          error instanceof PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException('Contribution reference must be unique');
+        }
+
+        throw error;
       });
 
-      if (!membership || membership.status !== MembershipStatus.ACTIVE) {
-        throw new ForbiddenException(
-          'Only ACTIVE group members can create contributions',
-        );
-      }
+    await this.notifyManagersAboutPendingContribution(
+      groupId,
+      userId,
+      Number(created.amount),
+      created.currency,
+      created.reference ?? null,
+      created.groupName,
+      created.id,
+    );
 
-      const existingContribution = await tx.contribution.findUnique({
-        where: { reference },
-        select: { id: true },
-      });
-
-      if (existingContribution) {
-        throw new ConflictException('Contribution reference already exists');
-      }
-
-      const contribution = await tx.contribution.create({
-        data: {
-          membershipId: membership.id,
-          amount: new Prisma.Decimal(amount.toFixed(2)),
-          currency,
-          status: ContributionStatus.PENDING,
-          contributedAt: new Date(),
-          reference,
-          notes: input.notes?.trim() || undefined,
-        },
-      });
-
-      return {
-        ...contribution,
-        amount: Number(contribution.amount),
-        status: contribution.status,
-        wallet: null,
-        transaction: null,
-      };
-    }).catch((error) => {
-      if (
-        error instanceof PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('Contribution reference must be unique');
-      }
-
-      throw error;
-    });
+    const { groupName: _groupName, ...result } = created;
+    return result;
   }
 
-  async approveContribution(userId: string, groupId: string, contributionId: string) {
-    const actorMembership = await this.ensureActiveGroupManager(userId, groupId);
+  async approveContribution(
+    userId: string,
+    groupId: string,
+    contributionId: string,
+  ) {
+    const actorMembership = await this.ensureActiveGroupManager(
+      userId,
+      groupId,
+    );
 
-    return this.prisma.$transaction(async (tx) => {
+    const approved = await this.prisma.$transaction(async (tx) => {
       const contribution = await tx.contribution.findUnique({
         where: { id: contributionId },
         select: {
           id: true,
+          membershipId: true,
           amount: true,
           currency: true,
           status: true,
           membership: {
             select: {
+              userId: true,
               groupId: true,
               group: {
                 select: {
@@ -135,11 +168,15 @@ export class ContributionsService {
       }
 
       if (contribution.membership.groupId !== groupId) {
-        throw new ForbiddenException('This contribution does not belong to this group');
+        throw new ForbiddenException(
+          'This contribution does not belong to this group',
+        );
       }
 
       if (contribution.status !== ContributionStatus.PENDING) {
-        throw new ConflictException('Only pending contributions can be approved');
+        throw new ConflictException(
+          'Only pending contributions can be approved',
+        );
       }
 
       const groupWallet = await tx.wallet.upsert({
@@ -209,7 +246,18 @@ export class ContributionsService {
         },
       });
 
+      await this.settleObligationsFromContribution(
+        tx,
+        updatedContribution.membershipId,
+        updatedContribution.id,
+        updatedContribution.amount,
+        updatedContribution.currency,
+        reviewedAt,
+      );
+
       return {
+        contributorUserId: contribution.membership.userId,
+        groupName: contribution.membership.group.name,
         ...updatedContribution,
         amount: Number(updatedContribution.amount),
         wallet: updatedWallet,
@@ -220,6 +268,73 @@ export class ContributionsService {
         },
       };
     });
+
+    await this.safeNotify(
+      approved.contributorUserId,
+      NotificationType.CONTRIBUTION_POSTED,
+      'Contribution approved',
+      `Your contribution to ${approved.groupName} has been approved and posted.`,
+      {
+        contributionId,
+        groupId,
+        amount: approved.amount,
+        currency: approved.currency,
+      },
+      `contribution-posted:${contributionId}`,
+    );
+
+    const {
+      contributorUserId: _contributorUserId,
+      groupName: _groupName,
+      ...result
+    } = approved;
+    return result;
+  }
+
+  private async settleObligationsFromContribution(
+    tx: Prisma.TransactionClient,
+    membershipId: string,
+    contributionId: string,
+    amount: Prisma.Decimal,
+    currency: string,
+    paidAt: Date,
+  ) {
+    let remaining = new Prisma.Decimal(amount);
+
+    while (remaining.greaterThan(0)) {
+      const obligation = await tx.contributionObligation.findFirst({
+        where: {
+          membershipId,
+          currency,
+          status: {
+            in: [ObligationStatus.PENDING, ObligationStatus.OVERDUE],
+          },
+          expectedAmount: {
+            lte: remaining,
+          },
+        },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          id: true,
+          expectedAmount: true,
+        },
+      });
+
+      if (!obligation) {
+        break;
+      }
+
+      await tx.contributionObligation.update({
+        where: { id: obligation.id },
+        data: {
+          status: ObligationStatus.PAID,
+          paidAt,
+          paidContributionId: contributionId,
+        },
+      });
+
+      remaining = remaining.minus(obligation.expectedAmount);
+    }
   }
 
   async rejectContribution(
@@ -236,7 +351,7 @@ export class ContributionsService {
 
     await this.ensureActiveGroupManager(userId, groupId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const rejected = await this.prisma.$transaction(async (tx) => {
       const contribution = await tx.contribution.findUnique({
         where: { id: contributionId },
         select: {
@@ -244,7 +359,13 @@ export class ContributionsService {
           status: true,
           membership: {
             select: {
+              userId: true,
               groupId: true,
+              group: {
+                select: {
+                  name: true,
+                },
+              },
             },
           },
         },
@@ -255,11 +376,15 @@ export class ContributionsService {
       }
 
       if (contribution.membership.groupId !== groupId) {
-        throw new ForbiddenException('This contribution does not belong to this group');
+        throw new ForbiddenException(
+          'This contribution does not belong to this group',
+        );
       }
 
       if (contribution.status !== ContributionStatus.PENDING) {
-        throw new ConflictException('Only pending contributions can be rejected');
+        throw new ConflictException(
+          'Only pending contributions can be rejected',
+        );
       }
 
       const reviewedAt = new Date();
@@ -278,7 +403,9 @@ export class ContributionsService {
       });
 
       if (claim.count !== 1) {
-        throw new ConflictException('This contribution has already been reviewed');
+        throw new ConflictException(
+          'This contribution has already been reviewed',
+        );
       }
 
       const updatedContribution = await tx.contribution.findUnique({
@@ -290,11 +417,98 @@ export class ContributionsService {
       }
 
       return {
+        contributorUserId: contribution.membership.userId,
+        groupName: contribution.membership.group.name,
         ...updatedContribution,
         amount: Number(updatedContribution.amount),
         reason,
       };
     });
+
+    await this.safeNotify(
+      rejected.contributorUserId,
+      NotificationType.SYSTEM,
+      'Contribution rejected',
+      `Your contribution to ${rejected.groupName} was rejected. Reason: ${reason}`,
+      {
+        contributionId,
+        groupId,
+        reason,
+      },
+      `contribution-rejected:${contributionId}`,
+    );
+
+    const {
+      contributorUserId: _contributorUserId,
+      groupName: _groupName,
+      ...result
+    } = rejected;
+    return result;
+  }
+
+  private async notifyManagersAboutPendingContribution(
+    groupId: string,
+    actorUserId: string,
+    amount: number,
+    currency: string,
+    reference: string | null,
+    groupName: string,
+    contributionId: string,
+  ) {
+    const managers = await this.prisma.groupMembership.findMany({
+      where: {
+        groupId,
+        status: MembershipStatus.ACTIVE,
+        role: {
+          in: [MembershipRole.OWNER, MembershipRole.ADMIN],
+        },
+        userId: {
+          not: actorUserId,
+        },
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    await Promise.all(
+      managers.map((manager) =>
+        this.safeNotify(
+          manager.userId,
+          NotificationType.SYSTEM,
+          'Contribution pending review',
+          `A ${currency} ${amount.toLocaleString('en-KE')} contribution in ${groupName} is waiting for manager review.`,
+          {
+            groupId,
+            contributionId,
+            reference,
+          },
+          `contribution-pending:${contributionId}:${manager.userId}`,
+        ),
+      ),
+    );
+  }
+
+  private async safeNotify(
+    userId: string,
+    type: NotificationType,
+    title: string,
+    message: string,
+    metadata: Prisma.InputJsonValue,
+    dedupeKey: string,
+  ) {
+    try {
+      await this.notificationsService.createNotification({
+        userId,
+        type,
+        title,
+        message,
+        metadata,
+        dedupeKey,
+      });
+    } catch {
+      // Notification failures must not block financial operations.
+    }
   }
 
   async getGroupContributions(userId: string, groupId: string) {
@@ -431,7 +645,9 @@ export class ContributionsService {
       },
     });
 
-    const groupIds = [...new Set(memberships.map((membership) => membership.groupId))];
+    const groupIds = [
+      ...new Set(memberships.map((membership) => membership.groupId)),
+    ];
 
     if (groupIds.length === 0) {
       return [];
@@ -469,7 +685,9 @@ export class ContributionsService {
 
     if (filters?.type) {
       const normalizedType = filters.type.toUpperCase();
-      if (!(Object.values(TransactionType) as string[]).includes(normalizedType)) {
+      if (
+        !(Object.values(TransactionType) as string[]).includes(normalizedType)
+      ) {
         throw new ForbiddenException('Unsupported transaction type filter');
       }
 
@@ -478,7 +696,11 @@ export class ContributionsService {
 
     if (filters?.status) {
       const normalizedStatus = filters.status.toUpperCase();
-      if (!(Object.values(TransactionStatus) as string[]).includes(normalizedStatus)) {
+      if (
+        !(Object.values(TransactionStatus) as string[]).includes(
+          normalizedStatus,
+        )
+      ) {
         throw new ForbiddenException('Unsupported transaction status filter');
       }
 
@@ -651,7 +873,9 @@ export class ContributionsService {
     const normalized = (currency ?? 'KES').trim().toUpperCase();
 
     if (!normalized || normalized.length !== 3) {
-      throw new BadRequestException('Currency code must be a 3-letter ISO code');
+      throw new BadRequestException(
+        'Currency code must be a 3-letter ISO code',
+      );
     }
 
     return normalized;

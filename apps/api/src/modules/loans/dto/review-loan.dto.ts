@@ -8,8 +8,6 @@ export class ReviewLoanDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   reason?: string;
 }

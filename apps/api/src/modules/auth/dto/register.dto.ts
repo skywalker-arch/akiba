@@ -14,23 +14,17 @@ export class RegisterDto {
 
   @IsString()
   @MinLength(2)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   firstName!: string;
 
   @IsString()
   @MinLength(2)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   lastName!: string;
 
   @IsOptional()
   @IsString()
   @MinLength(7)
-  @Transform(({ value }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   phone?: string;
 }

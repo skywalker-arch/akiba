@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useAuth } from "../context/auth-context";
 import { usersApi } from "../lib/api";
 import type { UserProfile } from "../types/api";
@@ -97,9 +97,12 @@ export function ProfilePage() {
           <p className="eyebrow">Profile</p>
           <h1>{profile ? `${profile.firstName} ${profile.lastName}` : "Your account"}</h1>
         </div>
-        <p className="muted-text profile-header__meta">
-          {profile?.email ?? "Keeping your account information accurate and secure."}
-        </p>
+        <div className="profile-header__meta">
+          <p className="muted-text">
+            {profile?.email ?? "Keeping your account information accurate and secure."}
+          </p>
+          <Link to="/statement" className="text-link">Open statement</Link>
+        </div>
       </div>
 
       <div className="profile-grid">

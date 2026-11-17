@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsOptional, IsPositive, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  IsPositive,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class DisburseLoanDto {
   @IsOptional()

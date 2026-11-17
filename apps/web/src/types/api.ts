@@ -69,6 +69,40 @@ export type MemberCandidate = {
   lastName: string;
 };
 
+export type SavingsGoalStatus = "ON_TRACK" | "OVERDUE" | "ACHIEVED";
+
+export type GoalMilestone = {
+  id: string;
+  name: string;
+  targetAmount: number;
+  dueDate: string;
+  isCompleted: boolean;
+  completedAt: string | null;
+  progressPercent: number;
+  status: SavingsGoalStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GroupSavingsGoal = {
+  id: string;
+  groupId: string;
+  name: string;
+  description: string | null;
+  targetAmount: number;
+  currentAmount: number;
+  remainingAmount: number;
+  progressPercent: number;
+  currency: string;
+  startDate: string;
+  targetDate: string;
+  status: SavingsGoalStatus;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  milestones: GoalMilestone[];
+};
+
 export type LoanStatus =
   | "REQUESTED"
   | "APPROVED"
@@ -271,5 +305,140 @@ export type ContributionDetails = {
       balance: number;
       updatedAt: string;
     };
+  }>;
+};
+
+export type ScheduleFrequency = "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";
+export type ObligationStatus = "PENDING" | "OVERDUE" | "PAID" | "WAIVED";
+
+export type ContributionSchedule = {
+  id: string;
+  groupId: string;
+  name: string;
+  amount: number;
+  currency: string;
+  frequency: ScheduleFrequency;
+  dueDayOfWeek: number | null;
+  dueDayOfMonth: number | null;
+  graceDays: number;
+  startsOn: string;
+  endsOn: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  obligationCount: number;
+  obligations: Array<{
+    id: string;
+    dueDate: string;
+    status: ObligationStatus;
+    expectedAmount: number;
+    paidAt: string | null;
+    member: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+    };
+  }>;
+};
+
+export type ContributionObligation = {
+  id: string;
+  dueDate: string;
+  expectedAmount: number;
+  currency: string;
+  status: ObligationStatus;
+  paidAt: string | null;
+  waivedReason: string | null;
+  schedule: {
+    id: string;
+    name: string;
+    frequency: ScheduleFrequency;
+    graceDays: number;
+    group: {
+      id: string;
+      name: string;
+      code: string;
+    };
+  };
+};
+
+export type NotificationType =
+  | "CONTRIBUTION_DUE"
+  | "CONTRIBUTION_OVERDUE"
+  | "CONTRIBUTION_POSTED"
+  | "LOAN_STATUS"
+  | "SYSTEM";
+
+export type NotificationItem = {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  dedupeKey: string | null;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NotificationSummary = {
+  unreadCount: number;
+};
+
+export type NotificationPreference = {
+  id: string;
+  userId: string;
+  contributionDueEnabled: boolean;
+  contributionOverdueEnabled: boolean;
+  contributionPostedEnabled: boolean;
+  loanStatusEnabled: boolean;
+  systemEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PersonalStatement = {
+  period: {
+    month: number;
+    year: number;
+    start: string;
+    endExclusive: string;
+  };
+  memberships: Array<{
+    id: string;
+    group: {
+      id: string;
+      name: string;
+      code: string;
+    };
+  }>;
+  contributions: {
+    submittedTotal: number;
+    postedTotal: number;
+    pendingCount: number;
+  };
+  loans: {
+    requestedCount: number;
+    activeCount: number;
+    disbursedTotal: number;
+    repaidTotal: number;
+    outstandingTotal: number;
+  };
+  transactions: Array<{
+    id: string;
+    type: string;
+    status: string;
+    amount: number;
+    currency: string;
+    occurredAt: string;
+    description: string | null;
+    externalReference: string | null;
+    group: {
+      id: string;
+      name: string;
+    } | null;
   }>;
 };

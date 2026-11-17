@@ -5,11 +5,44 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
+import {
+  ContributionStatus,
+  MembershipRole,
+  MembershipStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AddMemberDto } from './dto/add-member.dto';
+import { CreateGoalMilestoneDto } from './dto/create-goal-milestone.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { CreateSavingsGoalDto } from './dto/create-savings-goal.dto';
+import { UpdateGoalMilestoneDto } from './dto/update-goal-milestone.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
+import { UpdateSavingsGoalDto } from './dto/update-savings-goal.dto';
+
+type GoalWithMilestones = {
+  id: string;
+  groupId: string;
+  name: string;
+  description: string | null;
+  targetAmount: Prisma.Decimal;
+  currency: string;
+  startDate: Date;
+  targetDate: Date;
+  isArchived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  milestones: Array<{
+    id: string;
+    name: string;
+    targetAmount: Prisma.Decimal;
+    dueDate: Date;
+    isCompleted: boolean;
+    completedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+};
 
 @Injectable()
 export class GroupsService {
@@ -169,6 +202,338 @@ export class GroupsService {
       amount: Number(wallet?.balance ?? 0),
       currency: wallet?.currency ?? 'KES',
     };
+  }
+
+  async getGroupGoals(userId: string, groupId: string, includeArchived = false) {
+    await this.ensureGroupMember(userId, groupId);
+
+    const goals = await this.prisma.savingsGoal.findMany({
+      where: {
+        groupId,
+        ...(includeArchived ? {} : { isArchived: false }),
+      },
+      orderBy: [{ isArchived: 'asc' }, { targetDate: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        groupId: true,
+        name: true,
+        description: true,
+        targetAmount: true,
+        currency: true,
+        startDate: true,
+        targetDate: true,
+        isArchived: true,
+        createdAt: true,
+        updatedAt: true,
+        milestones: {
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            targetAmount: true,
+            dueDate: true,
+            isCompleted: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return Promise.all(goals.map((goal) => this.enrichGoalWithProgress(goal)));
+  }
+
+  async createGoal(userId: string, groupId: string, input: CreateSavingsGoalDto) {
+    await this.ensureGroupManager(userId, groupId);
+
+    const startDate = input.startDate ? new Date(input.startDate) : new Date();
+    const targetDate = new Date(input.targetDate);
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(targetDate.getTime())) {
+      throw new BadRequestException('Invalid goal date values');
+    }
+
+    if (targetDate <= startDate) {
+      throw new BadRequestException('Target date must be after the start date');
+    }
+
+    const goal = await this.prisma.savingsGoal.create({
+      data: {
+        groupId,
+        createdById: userId,
+        name: input.name.trim(),
+        description: input.description?.trim() || null,
+        targetAmount: input.targetAmount,
+        currency: input.currency?.trim().toUpperCase() ?? 'KES',
+        startDate,
+        targetDate,
+      },
+      select: {
+        id: true,
+        groupId: true,
+        name: true,
+        description: true,
+        targetAmount: true,
+        currency: true,
+        startDate: true,
+        targetDate: true,
+        isArchived: true,
+        createdAt: true,
+        updatedAt: true,
+        milestones: {
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            targetAmount: true,
+            dueDate: true,
+            isCompleted: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return this.enrichGoalWithProgress(goal);
+  }
+
+  async updateGoal(
+    userId: string,
+    groupId: string,
+    goalId: string,
+    input: UpdateSavingsGoalDto,
+  ) {
+    await this.ensureGroupManager(userId, groupId);
+
+    const existing = await this.prisma.savingsGoal.findFirst({
+      where: {
+        id: goalId,
+        groupId,
+      },
+      select: {
+        id: true,
+        startDate: true,
+        targetDate: true,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Savings goal not found');
+    }
+
+    if (
+      input.name === undefined &&
+      input.description === undefined &&
+      input.targetAmount === undefined &&
+      input.currency === undefined &&
+      input.startDate === undefined &&
+      input.targetDate === undefined &&
+      input.isArchived === undefined
+    ) {
+      throw new BadRequestException('Provide at least one field to update');
+    }
+
+    const nextStartDate = input.startDate
+      ? new Date(input.startDate)
+      : existing.startDate;
+    const nextTargetDate = input.targetDate
+      ? new Date(input.targetDate)
+      : existing.targetDate;
+
+    if (
+      Number.isNaN(nextStartDate.getTime()) ||
+      Number.isNaN(nextTargetDate.getTime())
+    ) {
+      throw new BadRequestException('Invalid goal date values');
+    }
+
+    if (nextTargetDate <= nextStartDate) {
+      throw new BadRequestException('Target date must be after the start date');
+    }
+
+    const data: Prisma.SavingsGoalUpdateInput = {
+      name: input.name?.trim(),
+      targetAmount: input.targetAmount,
+      currency: input.currency?.trim().toUpperCase(),
+      startDate: input.startDate ? nextStartDate : undefined,
+      targetDate: input.targetDate ? nextTargetDate : undefined,
+      isArchived: input.isArchived,
+    };
+
+    if (input.description !== undefined) {
+      data.description = input.description.trim() || null;
+    }
+
+    const goal = await this.prisma.savingsGoal.update({
+      where: {
+        id: goalId,
+      },
+      data,
+      select: {
+        id: true,
+        groupId: true,
+        name: true,
+        description: true,
+        targetAmount: true,
+        currency: true,
+        startDate: true,
+        targetDate: true,
+        isArchived: true,
+        createdAt: true,
+        updatedAt: true,
+        milestones: {
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            targetAmount: true,
+            dueDate: true,
+            isCompleted: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return this.enrichGoalWithProgress(goal);
+  }
+
+  async createGoalMilestone(
+    userId: string,
+    groupId: string,
+    goalId: string,
+    input: CreateGoalMilestoneDto,
+  ) {
+    await this.ensureGroupManager(userId, groupId);
+
+    const goal = await this.prisma.savingsGoal.findFirst({
+      where: {
+        id: goalId,
+        groupId,
+      },
+      select: {
+        id: true,
+        startDate: true,
+        targetDate: true,
+      },
+    });
+
+    if (!goal) {
+      throw new NotFoundException('Savings goal not found');
+    }
+
+    const dueDate = new Date(input.dueDate);
+
+    if (Number.isNaN(dueDate.getTime())) {
+      throw new BadRequestException('Invalid milestone due date');
+    }
+
+    if (dueDate < goal.startDate || dueDate > goal.targetDate) {
+      throw new BadRequestException(
+        'Milestone due date must fall within the goal date window',
+      );
+    }
+
+    await this.prisma.savingsGoalMilestone.create({
+      data: {
+        goalId,
+        createdById: userId,
+        name: input.name.trim(),
+        targetAmount: input.targetAmount,
+        dueDate,
+      },
+    });
+
+    const refreshedGoal = await this.getGoalWithMilestonesOrThrow(groupId, goalId);
+    return this.enrichGoalWithProgress(refreshedGoal);
+  }
+
+  async updateGoalMilestone(
+    userId: string,
+    groupId: string,
+    goalId: string,
+    milestoneId: string,
+    input: UpdateGoalMilestoneDto,
+  ) {
+    await this.ensureGroupManager(userId, groupId);
+
+    if (
+      input.name === undefined &&
+      input.targetAmount === undefined &&
+      input.dueDate === undefined &&
+      input.isCompleted === undefined
+    ) {
+      throw new BadRequestException('Provide at least one field to update');
+    }
+
+    const goal = await this.prisma.savingsGoal.findFirst({
+      where: {
+        id: goalId,
+        groupId,
+      },
+      select: {
+        id: true,
+        startDate: true,
+        targetDate: true,
+      },
+    });
+
+    if (!goal) {
+      throw new NotFoundException('Savings goal not found');
+    }
+
+    const milestone = await this.prisma.savingsGoalMilestone.findFirst({
+      where: {
+        id: milestoneId,
+        goalId,
+      },
+      select: {
+        id: true,
+        dueDate: true,
+      },
+    });
+
+    if (!milestone) {
+      throw new NotFoundException('Savings milestone not found');
+    }
+
+    const nextDueDate = input.dueDate ? new Date(input.dueDate) : milestone.dueDate;
+
+    if (Number.isNaN(nextDueDate.getTime())) {
+      throw new BadRequestException('Invalid milestone due date');
+    }
+
+    if (nextDueDate < goal.startDate || nextDueDate > goal.targetDate) {
+      throw new BadRequestException(
+        'Milestone due date must fall within the goal date window',
+      );
+    }
+
+    const data: Prisma.SavingsGoalMilestoneUpdateInput = {
+      name: input.name?.trim(),
+      targetAmount: input.targetAmount,
+      dueDate: input.dueDate ? nextDueDate : undefined,
+      isCompleted: input.isCompleted,
+      completedAt:
+        input.isCompleted === undefined
+          ? undefined
+          : input.isCompleted
+            ? new Date()
+            : null,
+    };
+
+    await this.prisma.savingsGoalMilestone.update({
+      where: { id: milestoneId },
+      data,
+    });
+
+    const refreshedGoal = await this.getGoalWithMilestonesOrThrow(groupId, goalId);
+    return this.enrichGoalWithProgress(refreshedGoal);
   }
 
   async addMember(userId: string, groupId: string, input: AddMemberDto) {
@@ -475,10 +840,137 @@ export class GroupsService {
       membership.role !== MembershipRole.OWNER &&
       membership.role !== MembershipRole.ADMIN
     ) {
-      throw new ForbiddenException('Only OWNER or ADMIN can perform this action');
+      throw new ForbiddenException(
+        'Only OWNER or ADMIN can perform this action',
+      );
     }
 
     return membership;
+  }
+
+  private async enrichGoalWithProgress(goal: GoalWithMilestones) {
+    const now = new Date();
+
+    const aggregate = await this.prisma.contribution.aggregate({
+      where: {
+        status: ContributionStatus.POSTED,
+        currency: goal.currency,
+        membership: {
+          groupId: goal.groupId,
+        },
+        contributedAt: {
+          gte: goal.startDate,
+          lte: now,
+        },
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    const currentAmount = Number(aggregate._sum.amount ?? 0);
+    const targetAmount = Number(goal.targetAmount);
+    const achieved = currentAmount >= targetAmount;
+    const remainingAmount = Math.max(0, targetAmount - currentAmount);
+    const progressPercent =
+      targetAmount > 0
+        ? Math.min(100, Number(((currentAmount / targetAmount) * 100).toFixed(2)))
+        : 0;
+
+    let status: 'ON_TRACK' | 'OVERDUE' | 'ACHIEVED';
+
+    if (achieved) {
+      status = 'ACHIEVED';
+    } else if (now > goal.targetDate) {
+      status = 'OVERDUE';
+    } else {
+      status = 'ON_TRACK';
+    }
+
+    const milestones = goal.milestones.map((milestone) => {
+      const milestoneTargetAmount = Number(milestone.targetAmount);
+      const milestoneProgressPercent =
+        milestoneTargetAmount > 0
+          ? Math.min(
+              100,
+              Number(((currentAmount / milestoneTargetAmount) * 100).toFixed(2)),
+            )
+          : 0;
+
+      let milestoneStatus: 'ON_TRACK' | 'OVERDUE' | 'ACHIEVED';
+
+      if (milestone.isCompleted || currentAmount >= milestoneTargetAmount) {
+        milestoneStatus = 'ACHIEVED';
+      } else if (now > milestone.dueDate) {
+        milestoneStatus = 'OVERDUE';
+      } else {
+        milestoneStatus = 'ON_TRACK';
+      }
+
+      return {
+        id: milestone.id,
+        name: milestone.name,
+        targetAmount: milestoneTargetAmount,
+        dueDate: milestone.dueDate,
+        isCompleted: milestone.isCompleted,
+        completedAt: milestone.completedAt,
+        progressPercent: milestoneProgressPercent,
+        status: milestoneStatus,
+        createdAt: milestone.createdAt,
+        updatedAt: milestone.updatedAt,
+      };
+    });
+
+    return {
+      ...goal,
+      targetAmount,
+      currentAmount,
+      remainingAmount,
+      progressPercent,
+      status,
+      milestones,
+    };
+  }
+
+  private async getGoalWithMilestonesOrThrow(groupId: string, goalId: string) {
+    const goal = await this.prisma.savingsGoal.findFirst({
+      where: {
+        id: goalId,
+        groupId,
+      },
+      select: {
+        id: true,
+        groupId: true,
+        name: true,
+        description: true,
+        targetAmount: true,
+        currency: true,
+        startDate: true,
+        targetDate: true,
+        isArchived: true,
+        createdAt: true,
+        updatedAt: true,
+        milestones: {
+          orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            targetAmount: true,
+            dueDate: true,
+            isCompleted: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!goal) {
+      throw new NotFoundException('Savings goal not found');
+    }
+
+    return goal;
   }
 
   private async generateUniqueGroupCode(): Promise<string> {

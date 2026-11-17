@@ -34,6 +34,10 @@ describe('ContributionsService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
     },
+    contributionObligation: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
   };
 
   beforeEach(() => {
@@ -155,7 +159,7 @@ describe('ContributionsService', () => {
       amount: 2500,
       currency: 'KES',
       reference: 'MPESA-123',
-    } as any);
+    });
 
     expect(result.status).toBe(ContributionStatus.PENDING);
     expect(prisma.wallet.upsert).not.toHaveBeenCalled();
@@ -222,10 +226,17 @@ describe('ContributionsService', () => {
       reviewReason: null,
       reviewedAt: new Date(),
     });
-    prisma.transaction.create.mockResolvedValue({ id: 'tx-1', status: TransactionStatus.POSTED });
+    prisma.transaction.create.mockResolvedValue({
+      id: 'tx-1',
+      status: TransactionStatus.POSTED,
+    });
     prisma.wallet.update.mockResolvedValue({ id: 'wallet-1', balance: 3500 });
 
-    const result = await service.approveContribution('admin-1', 'group-1', 'contribution-1');
+    const result = await service.approveContribution(
+      'admin-1',
+      'group-1',
+      'contribution-1',
+    );
 
     expect(prisma.contribution.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -341,7 +352,9 @@ describe('ContributionsService', () => {
       currency: 'KES',
       status: ContributionStatus.PENDING,
       membership: {
+        userId: 'user-1',
         groupId: 'group-1',
+        group: { id: 'group-1', name: 'Alpha Group' },
       },
     });
     prisma.contribution.updateMany.mockResolvedValue({ count: 1 });
@@ -352,22 +365,29 @@ describe('ContributionsService', () => {
         currency: 'KES',
         status: ContributionStatus.PENDING,
         membership: {
+          userId: 'user-1',
           groupId: 'group-1',
+          group: { id: 'group-1', name: 'Alpha Group' },
         },
       })
       .mockResolvedValueOnce({
-      id: 'contribution-1',
-      amount: 2500,
-      currency: 'KES',
-      status: ContributionStatus.REJECTED,
-      reviewReason: 'Incorrect reference',
-      reviewedById: 'admin-1',
-      reviewedAt: new Date(),
-    });
+        id: 'contribution-1',
+        amount: 2500,
+        currency: 'KES',
+        status: ContributionStatus.REJECTED,
+        reviewReason: 'Incorrect reference',
+        reviewedById: 'admin-1',
+        reviewedAt: new Date(),
+      });
 
-    const result = await service.rejectContribution('admin-1', 'group-1', 'contribution-1', {
-      reason: 'Incorrect reference',
-    } as any);
+    const result = await service.rejectContribution(
+      'admin-1',
+      'group-1',
+      'contribution-1',
+      {
+        reason: 'Incorrect reference',
+      },
+    );
 
     expect(result.status).toBe(ContributionStatus.REJECTED);
     expect(result.reason).toBe('Incorrect reference');

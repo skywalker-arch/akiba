@@ -51,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isMounted) {
           setIsCheckingSession(false);
         }
+
       });
 
     return () => {

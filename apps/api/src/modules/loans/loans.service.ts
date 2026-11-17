@@ -7,6 +7,9 @@ import {
 } from '@nestjs/common';
 import {
   LoanStatus,
+  MembershipRole,
+  MembershipStatus,
+  NotificationType,
   Prisma,
   RepaymentStatus,
   TransactionStatus,
@@ -17,6 +20,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { GroupsService } from '../groups/groups.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateLoanRepaymentDto } from './dto/create-loan-repayment.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { DisburseLoanDto } from './dto/disburse-loan.dto';
@@ -27,6 +31,7 @@ export class LoansService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly groupsService: GroupsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -89,10 +94,7 @@ export class LoansService {
           return false;
         }
 
-        const summary = this.calculateFinancialSummary(
-          loan,
-          loan.repayments,
-        );
+        const summary = this.calculateFinancialSummary(loan, loan.repayments);
 
         if (summary.outstandingAmount <= 0) {
           return false;
@@ -190,7 +192,43 @@ export class LoansService {
       },
     });
 
-    return this.withFinancialSummary(created, []);
+    const result = this.withFinancialSummary(created, []);
+
+    const managers = await this.prisma.groupMembership.findMany({
+      where: {
+        groupId,
+        userId: {
+          not: userId,
+        },
+        status: MembershipStatus.ACTIVE,
+        role: {
+          in: [MembershipRole.OWNER, MembershipRole.ADMIN],
+        },
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    const borrowerName = `${created.borrowerMembership.user.firstName} ${created.borrowerMembership.user.lastName}`;
+    await Promise.all(
+      managers.map((manager) =>
+        this.safeNotify(
+          manager.userId,
+          NotificationType.LOAN_STATUS,
+          'New loan request',
+          `${borrowerName} submitted a new loan request awaiting review.`,
+          {
+            loanId: created.id,
+            groupId,
+            status: 'REQUESTED',
+          },
+          `loan-request:${created.id}:${manager.userId}`,
+        ),
+      ),
+    );
+
+    return result;
   }
 
   async getGroupLoans(userId: string, groupId: string) {
@@ -414,7 +452,10 @@ export class LoansService {
     const status =
       input.decision === 'APPROVED' ? LoanStatus.APPROVED : LoanStatus.REJECTED;
 
-    return this.prisma.$transaction(async (tx) => {
+    const borrowerUserId = loan.borrowerMembership.userId;
+    const borrowerName = `${loan.borrowerMembership.user.firstName} ${loan.borrowerMembership.user.lastName}`;
+
+    const reviewed = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.loan.updateMany({
         where: {
           id: loanId,
@@ -458,6 +499,24 @@ export class LoansService {
 
       return this.withFinancialSummary(updatedLoan, repayments);
     });
+
+    await this.safeNotify(
+      borrowerUserId,
+      NotificationType.LOAN_STATUS,
+      `Loan ${input.decision === 'APPROVED' ? 'approved' : 'rejected'}`,
+      input.decision === 'APPROVED'
+        ? `Your loan request has been approved by a group manager.`
+        : `Your loan request was rejected. Reason: ${input.reason?.trim() ?? 'Not provided'}`,
+      {
+        loanId,
+        groupId,
+        borrowerName,
+        decision: input.decision,
+      },
+      `loan-review:${loanId}:${status}`,
+    );
+
+    return reviewed;
   }
 
   async disburseLoan(
@@ -472,7 +531,7 @@ export class LoansService {
       'Disbursement reference is required',
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const disbursed = await this.prisma.$transaction(async (tx) => {
       const loan = await tx.loan.findFirst({
         where: {
           id: loanId,
@@ -487,6 +546,7 @@ export class LoansService {
           termMonths: true,
           borrowerMembership: {
             select: {
+              userId: true,
               user: {
                 select: {
                   firstName: true,
@@ -628,8 +688,27 @@ export class LoansService {
         },
       });
 
-      return this.withFinancialSummary(updatedLoan, repayments);
+      return {
+        borrowerUserId: loan.borrowerMembership.userId,
+        borrowerName: `${loan.borrowerMembership.user.firstName} ${loan.borrowerMembership.user.lastName}`,
+        result: this.withFinancialSummary(updatedLoan, repayments),
+      };
     });
+
+    await this.safeNotify(
+      disbursed.borrowerUserId,
+      NotificationType.LOAN_STATUS,
+      'Loan disbursed',
+      `Your approved loan has been disbursed to your group account ledger.`,
+      {
+        loanId,
+        groupId,
+        borrowerName: disbursed.borrowerName,
+      },
+      `loan-disbursed:${loanId}`,
+    );
+
+    return disbursed.result;
   }
 
   async createRepayment(
@@ -648,7 +727,7 @@ export class LoansService {
     );
     const paidAt = this.normalizePaidAt(input.paidAt);
 
-    return this.prisma.$transaction(async (tx) => {
+    const repaymentResult = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT 1 FROM "Loan" WHERE id = ${loanId} FOR UPDATE`,
       );
@@ -691,24 +770,30 @@ export class LoansService {
       }
 
       const repaymentAmount = new Prisma.Decimal(input.amount.toFixed(2));
-      const financialSummary = this.calculateFinancialSummary({
-        principalAmount: loan.principalAmount,
-        interestRate: loan.interestRate,
-        termMonths: loan.termMonths,
-        disbursedAt: null,
-        dueAt: loan.dueAt,
-      },
-      await tx.loanRepayment.findMany({
-        where: {
-          loanId,
-          status: RepaymentStatus.POSTED,
+      const financialSummary = this.calculateFinancialSummary(
+        {
+          principalAmount: loan.principalAmount,
+          interestRate: loan.interestRate,
+          termMonths: loan.termMonths,
+          disbursedAt: null,
+          dueAt: loan.dueAt,
         },
-        select: {
-          amount: true,
-        },
-      }));
+        await tx.loanRepayment.findMany({
+          where: {
+            loanId,
+            status: RepaymentStatus.POSTED,
+          },
+          select: {
+            amount: true,
+          },
+        }),
+      );
 
-      if (repaymentAmount.greaterThan(new Prisma.Decimal(financialSummary.outstandingAmount))) {
+      if (
+        repaymentAmount.greaterThan(
+          new Prisma.Decimal(financialSummary.outstandingAmount),
+        )
+      ) {
         throw new BadRequestException(
           'Repayment amount cannot be greater than the outstanding balance',
         );
@@ -822,12 +907,58 @@ export class LoansService {
       });
 
       return {
+        borrowerUserId: loan.borrowerMembership.userId,
+        actorMembershipId: actorMembership.id,
         repaymentId: repayment.id,
         loanId,
         status: nextStatus,
         outstandingAmount: nextSummary.outstandingAmount,
       };
     });
+
+    await this.safeNotify(
+      repaymentResult.borrowerUserId,
+      NotificationType.LOAN_STATUS,
+      'Loan repayment posted',
+      `A loan repayment has been recorded. Outstanding balance is KES ${repaymentResult.outstandingAmount.toLocaleString('en-KE')}.`,
+      {
+        loanId,
+        groupId,
+        repaymentId: repaymentResult.repaymentId,
+        status: repaymentResult.status,
+        outstandingAmount: repaymentResult.outstandingAmount,
+      },
+      `loan-repayment:${repaymentResult.repaymentId}`,
+    );
+
+    const {
+      borrowerUserId: _borrowerUserId,
+      actorMembershipId: _actorMembershipId,
+      ...result
+    } = repaymentResult;
+    return result;
+  }
+
+  private async safeNotify(
+    userId: string,
+    type: NotificationType,
+    title: string,
+    message: string,
+    metadata: Prisma.InputJsonValue,
+    dedupeKey: string,
+  ) {
+    try {
+      await this.notificationsService.createNotification({
+        userId,
+        type,
+        title,
+        message,
+        metadata,
+        dedupeKey,
+      });
+    } catch {
+      // Notification failures must not block financial operations.
+    }
   }
 
   private normalizeFinancialReference(reference: string, emptyMessage: string) {
@@ -900,16 +1031,15 @@ export class LoansService {
     };
   }
 
-  private withFinancialSummary<T extends {
-    principalAmount: Prisma.Decimal;
-    interestRate: Prisma.Decimal;
-    termMonths: number;
-    disbursedAt: Date | null;
-    dueAt: Date | null;
-  }>(
-    loan: T,
-    repayments: Array<{ amount: Prisma.Decimal }>,
-  ) {
+  private withFinancialSummary<
+    T extends {
+      principalAmount: Prisma.Decimal;
+      interestRate: Prisma.Decimal;
+      termMonths: number;
+      disbursedAt: Date | null;
+      dueAt: Date | null;
+    },
+  >(loan: T, repayments: Array<{ amount: Prisma.Decimal }>) {
     return {
       ...loan,
       principalAmount: Number(loan.principalAmount),

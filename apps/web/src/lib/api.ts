@@ -4,7 +4,14 @@ import type {
   AuthTokenResponse,
   Contribution,
   ContributionDetails,
+  ContributionObligation,
+  ContributionSchedule,
+  NotificationItem,
+  NotificationPreference,
+  NotificationSummary,
+  PersonalStatement,
   GroupDetails,
+  GroupSavingsGoal,
   MemberCandidate,
   GroupSummary,
   Loan,
@@ -57,6 +64,24 @@ export const usersApi = {
       token,
       body: payload,
     });
+  },
+  getMyStatement(token: string, filters?: { month?: number; year?: number }) {
+    const params = new URLSearchParams();
+
+    if (filters?.month !== undefined) {
+      params.set("month", String(filters.month));
+    }
+
+    if (filters?.year !== undefined) {
+      params.set("year", String(filters.year));
+    }
+
+    const query = params.toString();
+
+    return apiRequest<PersonalStatement>(
+      apiUrl(`/users/me/statement${query ? `?${query}` : ""}`),
+      { token },
+    );
   },
 };
 
@@ -114,6 +139,87 @@ export const groupsApi = {
       method: "DELETE",
       token,
     });
+  },
+  getGroupGoals(token: string, groupId: string, options?: { includeArchived?: boolean }) {
+    const includeArchived = options?.includeArchived ? "?includeArchived=true" : "";
+    return apiRequest<GroupSavingsGoal[]>(apiUrl(`/groups/${groupId}/goals${includeArchived}`), {
+      token,
+    });
+  },
+  createGoal(
+    token: string,
+    groupId: string,
+    payload: {
+      name: string;
+      description?: string;
+      targetAmount: number;
+      currency?: string;
+      startDate?: string;
+      targetDate: string;
+    },
+  ) {
+    return apiRequest<GroupSavingsGoal>(apiUrl(`/groups/${groupId}/goals`), {
+      method: "POST",
+      token,
+      body: payload,
+    });
+  },
+  updateGoal(
+    token: string,
+    groupId: string,
+    goalId: string,
+    payload: {
+      name?: string;
+      description?: string;
+      targetAmount?: number;
+      currency?: string;
+      startDate?: string;
+      targetDate?: string;
+      isArchived?: boolean;
+    },
+  ) {
+    return apiRequest<GroupSavingsGoal>(apiUrl(`/groups/${groupId}/goals/${goalId}`), {
+      method: "PATCH",
+      token,
+      body: payload,
+    });
+  },
+  createGoalMilestone(
+    token: string,
+    groupId: string,
+    goalId: string,
+    payload: {
+      name: string;
+      targetAmount: number;
+      dueDate: string;
+    },
+  ) {
+    return apiRequest<GroupSavingsGoal>(apiUrl(`/groups/${groupId}/goals/${goalId}/milestones`), {
+      method: "POST",
+      token,
+      body: payload,
+    });
+  },
+  updateGoalMilestone(
+    token: string,
+    groupId: string,
+    goalId: string,
+    milestoneId: string,
+    payload: {
+      name?: string;
+      targetAmount?: number;
+      dueDate?: string;
+      isCompleted?: boolean;
+    },
+  ) {
+    return apiRequest<GroupSavingsGoal>(
+      apiUrl(`/groups/${groupId}/goals/${goalId}/milestones/${milestoneId}`),
+      {
+        method: "PATCH",
+        token,
+        body: payload,
+      },
+    );
   },
 };
 
@@ -265,6 +371,162 @@ export const financeApi = {
 
     const query = params.toString();
     return apiRequest<Transaction[]>(apiUrl(`/transactions${query ? `?${query}` : ""}`), {
+      token,
+    });
+  },
+};
+
+export const schedulesApi = {
+  getGroupSchedules(token: string, groupId: string) {
+    return apiRequest<ContributionSchedule[]>(
+      apiUrl(`/groups/${groupId}/contribution-schedules`),
+      { token },
+    );
+  },
+  createSchedule(
+    token: string,
+    groupId: string,
+    payload: {
+      name: string;
+      amount: number;
+      currency?: string;
+      frequency: "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";
+      dueDayOfWeek?: number;
+      dueDayOfMonth?: number;
+      graceDays?: number;
+      startsOn: string;
+      endsOn?: string;
+    },
+  ) {
+    return apiRequest(
+      apiUrl(`/groups/${groupId}/contribution-schedules`),
+      {
+        method: "POST",
+        token,
+        body: payload,
+      },
+    );
+  },
+  updateSchedule(
+    token: string,
+    groupId: string,
+    scheduleId: string,
+    payload: {
+      name?: string;
+      amount?: number;
+      currency?: string;
+      frequency?: "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";
+      dueDayOfWeek?: number;
+      dueDayOfMonth?: number;
+      graceDays?: number;
+      startsOn?: string;
+      endsOn?: string;
+      isActive?: boolean;
+    },
+  ) {
+    return apiRequest(
+      apiUrl(`/groups/${groupId}/contribution-schedules/${scheduleId}`),
+      {
+        method: "PATCH",
+        token,
+        body: payload,
+      },
+    );
+  },
+  getMyObligations(
+    token: string,
+    filters?: { status?: "PENDING" | "OVERDUE" | "PAID" | "WAIVED"; groupId?: string; limit?: number },
+  ) {
+    const params = new URLSearchParams();
+
+    if (filters?.status) {
+      params.set("status", filters.status);
+    }
+
+    if (filters?.groupId) {
+      params.set("groupId", filters.groupId);
+    }
+
+    if (filters?.limit !== undefined) {
+      params.set("limit", String(filters.limit));
+    }
+
+    const query = params.toString();
+
+    return apiRequest<ContributionObligation[]>(
+      apiUrl(`/users/me/contribution-obligations${query ? `?${query}` : ""}`),
+      { token },
+    );
+  },
+};
+
+export const notificationsApi = {
+  list(
+    token: string,
+    filters?: { unreadOnly?: boolean; limit?: number },
+  ) {
+    const params = new URLSearchParams();
+
+    if (filters?.unreadOnly !== undefined) {
+      params.set("unreadOnly", String(filters.unreadOnly));
+    }
+
+    if (filters?.limit !== undefined) {
+      params.set("limit", String(filters.limit));
+    }
+
+    const query = params.toString();
+
+    return apiRequest<NotificationItem[]>(
+      apiUrl(`/notifications${query ? `?${query}` : ""}`),
+      { token },
+    );
+  },
+  markRead(token: string, notificationId: string) {
+    return apiRequest<NotificationItem>(
+      apiUrl(`/notifications/${notificationId}/read`),
+      {
+        method: "PATCH",
+        token,
+      },
+    );
+  },
+  summary(token: string) {
+    return apiRequest<NotificationSummary>(apiUrl('/notifications/summary'), {
+      token,
+    });
+  },
+  getPreferences(token: string) {
+    return apiRequest<NotificationPreference>(
+      apiUrl('/notifications/preferences'),
+      { token },
+    );
+  },
+  updatePreferences(
+    token: string,
+    payload: Partial<
+      Pick<
+        NotificationPreference,
+        | 'contributionDueEnabled'
+        | 'contributionOverdueEnabled'
+        | 'contributionPostedEnabled'
+        | 'loanStatusEnabled'
+        | 'systemEnabled'
+      >
+    >,
+  ) {
+    return apiRequest<NotificationPreference>(
+      apiUrl('/notifications/preferences'),
+      {
+        method: 'PATCH',
+        token,
+        body: payload,
+      },
+    );
+  },
+  markAllRead(token: string) {
+    return apiRequest<{ updatedCount: number }>(apiUrl("/notifications/read-all"), {
+      method: "POST",
       token,
     });
   },
