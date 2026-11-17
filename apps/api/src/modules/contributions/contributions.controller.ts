@@ -27,7 +27,11 @@ export class ContributionsController {
     @Param('groupId', new ParseUUIDPipe()) groupId: string,
     @Body() body: CreateContributionDto,
   ) {
-    return this.contributionsService.createContribution(user.sub, groupId, body);
+    return this.contributionsService.createContribution(
+      user.sub,
+      groupId,
+      body,
+    );
   }
 
   @Post('groups/:groupId/contributions/:contributionId/approve')

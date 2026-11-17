@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { LoanStatus } from '@prisma/client';
 import { LoansService } from './loans.service';
 
@@ -167,9 +171,7 @@ describe('LoansService', () => {
         },
       };
 
-      prisma.$transaction.mockImplementation(
-        (callback: any) => callback(tx),
-      );
+      prisma.$transaction.mockImplementation((callback: any) => callback(tx));
 
       return tx;
     };
@@ -223,5 +225,4 @@ describe('LoansService', () => {
       expect(tx.loan.updateMany).not.toHaveBeenCalled();
     });
   });
-
 });

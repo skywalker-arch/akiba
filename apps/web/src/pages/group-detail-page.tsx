@@ -334,12 +334,20 @@ export function GroupDetailPage() {
           {group.description && <p className="group-description">{group.description}</p>}
         </div>
 
-        <button
-          className="button button-primary"
-          onClick={() => setIsModalOpen(true)}
-        >
-          Make Contribution
-        </button>
+        <div className="inline-actions">
+          <Link className="button button-secondary" to={`/groups/${group.id}/goals`}>
+            Savings goals
+          </Link>
+          <Link className="button button-secondary" to={`/groups/${group.id}/schedules`}>
+            Contribution schedules
+          </Link>
+          <button
+            className="button button-primary"
+            onClick={() => setIsModalOpen(true)}
+          >
+            Make Contribution
+          </button>
+        </div>
       </section>
 
       <div className="stats-grid">

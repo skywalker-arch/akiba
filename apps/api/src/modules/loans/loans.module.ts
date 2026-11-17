@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { GroupsModule } from '../groups/groups.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { LoansController } from './loans.controller';
 import { LoansService } from './loans.service';
 
 @Module({
-  imports: [GroupsModule],
+  imports: [GroupsModule, NotificationsModule],
   controllers: [LoansController],
   providers: [LoansService],
 })
