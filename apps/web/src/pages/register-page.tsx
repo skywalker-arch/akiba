@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { AkibaLogo } from "../components/akiba-logo";
 import { useAuth } from "../context/auth-context";
 import { authApi } from "../lib/api";
@@ -7,6 +7,7 @@ import { authApi } from "../lib/api";
 export function RegisterPage() {
   const { isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -20,7 +21,7 @@ export function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={searchParams.get("next") || "/dashboard"} replace />;
   }
 
   function validate() {
@@ -82,7 +83,7 @@ export function RegisterPage() {
         phone: validation.phone || undefined,
       });
       login(result.accessToken);
-      navigate("/dashboard", { replace: true });
+      navigate(searchParams.get("next") || "/dashboard", { replace: true });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Registration failed");
     } finally {
@@ -218,7 +219,7 @@ export function RegisterPage() {
         </form>
 
         <p className="muted-text auth-switcher">
-          Already registered? <Link to="/login">Sign in</Link>
+          Already registered? <Link to={`/login${searchParams.get("next") ? `?next=${encodeURIComponent(searchParams.get("next") as string)}` : ""}`}>Sign in</Link>
         </p>
       </div>
     </section>

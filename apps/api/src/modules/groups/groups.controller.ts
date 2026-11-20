@@ -14,9 +14,11 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AddMemberDto } from './dto/add-member.dto';
+import { CreateGroupInvitationsDto } from './dto/create-group-invitations.dto';
 import { CreateGoalMilestoneDto } from './dto/create-goal-milestone.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { CreateSavingsGoalDto } from './dto/create-savings-goal.dto';
+import { ListGroupInvitationsDto } from './dto/list-group-invitations.dto';
 import { UpdateGoalMilestoneDto } from './dto/update-goal-milestone.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import { UpdateSavingsGoalDto } from './dto/update-savings-goal.dto';
@@ -122,6 +124,42 @@ export class GroupsController {
     @Body() body: AddMemberDto,
   ) {
     return this.groupsService.addMember(user.sub, id, body);
+  }
+
+  @Post(':id/invitations')
+  createInvitations(
+    @CurrentUser() user: { sub: string; email: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: CreateGroupInvitationsDto,
+  ) {
+    return this.groupsService.createInvitations(user.sub, id, body);
+  }
+
+  @Get(':id/invitations')
+  listInvitations(
+    @CurrentUser() user: { sub: string; email: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query() query: ListGroupInvitationsDto,
+  ) {
+    return this.groupsService.listInvitations(user.sub, id, query);
+  }
+
+  @Post(':id/invitations/:invitationId/revoke')
+  revokeInvitation(
+    @CurrentUser() user: { sub: string; email: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('invitationId', new ParseUUIDPipe()) invitationId: string,
+  ) {
+    return this.groupsService.revokeInvitation(user.sub, id, invitationId);
+  }
+
+  @Post(':id/invitations/:invitationId/resend')
+  resendInvitation(
+    @CurrentUser() user: { sub: string; email: string },
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('invitationId', new ParseUUIDPipe()) invitationId: string,
+  ) {
+    return this.groupsService.resendInvitation(user.sub, id, invitationId);
   }
 
   @Get(':id/member-candidates')

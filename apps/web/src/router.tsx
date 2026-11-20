@@ -16,6 +16,7 @@ import { ProfilePage } from "./pages/profile-page";
 import { RegisterPage } from "./pages/register-page";
 import { StatementPage } from "./pages/statement-page";
 import { TransactionsPage } from "./pages/transactions-page";
+import { InvitationAcceptPage } from "./pages/invitation-accept-page";
 
 export const router = createBrowserRouter([
   {
@@ -29,6 +30,10 @@ export const router = createBrowserRouter([
   {
     path: "/register",
     element: <RegisterPage />,
+  },
+  {
+    path: "/invite/:token",
+    element: <InvitationAcceptPage />,
   },
   {
     element: <ProtectedRoute />,

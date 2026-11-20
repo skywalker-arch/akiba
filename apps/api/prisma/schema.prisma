@@ -20,6 +20,13 @@ enum MembershipStatus {
   LEFT
 }
 
+enum GroupInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 enum ContributionStatus {
   PENDING
   POSTED
@@ -112,6 +119,8 @@ model User {
   createdGoalMilestones SavingsGoalMilestone[] @relation("GoalMilestoneCreatedBy")
   notifications Notification[]
   notificationPreference NotificationPreference?
+  sentGroupInvitations GroupInvitation[] @relation("GroupInvitationSentBy")
+  acceptedGroupInvitations GroupInvitation[] @relation("GroupInvitationAcceptedBy")
 
   @@index([createdAt])
 }
@@ -131,6 +140,7 @@ model SavingsGroup {
   wallets     Wallet[]
   schedules   ContributionSchedule[]
   goals       SavingsGoal[]
+  invitations GroupInvitation[]
 
   @@index([createdById])
   @@index([createdAt])
@@ -157,6 +167,34 @@ model GroupMembership {
   @@unique([userId, groupId])
   @@index([groupId, status])
   @@index([userId, status])
+}
+
+model GroupInvitation {
+  id               String                @id @default(uuid())
+  groupId          String
+  invitedById      String
+  invitedEmail     String
+  role             MembershipRole        @default(MEMBER)
+  status           GroupInvitationStatus @default(PENDING)
+  tokenHash        String                @unique
+  pendingKey       String?               @unique
+  message          String?
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  acceptedByUserId String?
+  lastSentAt       DateTime
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  group            SavingsGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  invitedBy        User         @relation("GroupInvitationSentBy", fields: [invitedById], references: [id], onDelete: Restrict)
+  acceptedBy       User?        @relation("GroupInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([groupId, status, createdAt])
+  @@index([groupId, invitedEmail])
+  @@index([invitedEmail, status])
+  @@index([expiresAt, status])
 }
 
 model Contribution {

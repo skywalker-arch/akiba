@@ -6,9 +6,12 @@ import type {
   ContributionDetails,
   ContributionObligation,
   ContributionSchedule,
+  GroupInvitation,
+  GroupInvitationCreateResult,
   NotificationItem,
   NotificationPreference,
   NotificationSummary,
+  InvitationPreview,
   PersonalStatement,
   GroupDetails,
   GroupSavingsGoal,
@@ -122,6 +125,60 @@ export const groupsApi = {
       body: payload,
     });
   },
+  createInvitations(
+    token: string,
+    groupId: string,
+    payload: { email?: string; emails?: string[]; message?: string },
+  ) {
+    return apiRequest<GroupInvitationCreateResult>(
+      apiUrl(`/groups/${groupId}/invitations`),
+      {
+        method: "POST",
+        token,
+        body: payload,
+      },
+    );
+  },
+  listInvitations(
+    token: string,
+    groupId: string,
+    options?: { status?: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED" },
+  ) {
+    const params = new URLSearchParams();
+
+    if (options?.status) {
+      params.set("status", options.status);
+    }
+
+    const query = params.toString();
+
+    return apiRequest<GroupInvitation[]>(
+      apiUrl(`/groups/${groupId}/invitations${query ? `?${query}` : ""}`),
+      { token },
+    );
+  },
+  revokeInvitation(token: string, groupId: string, invitationId: string) {
+    return apiRequest<{ id: string; status: string; revokedAt: string }>(
+      apiUrl(`/groups/${groupId}/invitations/${invitationId}/revoke`),
+      {
+        method: "POST",
+        token,
+      },
+    );
+  },
+  resendInvitation(token: string, groupId: string, invitationId: string) {
+    return apiRequest<{
+      id: string;
+      invitedEmail: string;
+      expiresAt: string;
+      invitationLink: string;
+      whatsappShareUrl: string;
+      delivery: { delivered: boolean; channel: "email" | "none"; reason?: string };
+    }>(apiUrl(`/groups/${groupId}/invitations/${invitationId}/resend`), {
+      method: "POST",
+      token,
+    });
+  },
   updateMember(
     token: string,
     groupId: string,
@@ -220,6 +277,32 @@ export const groupsApi = {
         body: payload,
       },
     );
+  },
+};
+
+export const groupInvitationsApi = {
+  preview(token: string) {
+    return apiRequest<InvitationPreview>(apiUrl(`/group-invitations/${token}`));
+  },
+  accept(authToken: string, token: string) {
+    return apiRequest<{
+      invitationId: string;
+      groupId: string;
+      membership: {
+        id: string;
+        role: MemberRole;
+        status: MemberStatus;
+        createdAt: string;
+        group: {
+          id: string;
+          name: string;
+          code: string;
+        };
+      };
+    }>(apiUrl(`/group-invitations/${token}/accept`), {
+      method: "POST",
+      token: authToken,
+    });
   },
 };
 

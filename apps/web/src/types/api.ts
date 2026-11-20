@@ -60,6 +60,80 @@ export type GroupDetails = {
     };
   }>;
   memberCount: number;
+  pendingInvitationCount: number;
+};
+
+export type InvitationStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "REVOKED"
+  | "EXPIRED";
+
+export type GroupInvitation = {
+  id: string;
+  invitedEmail: string;
+  role: MemberRole;
+  status: InvitationStatus;
+  effectiveStatus: InvitationStatus;
+  message: string | null;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  invitedBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  acceptedBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+};
+
+export type GroupInvitationCreateResult = {
+  groupId: string;
+  requestedCount: number;
+  invitedCount: number;
+  skippedCount: number;
+  results: Array<{
+    email: string;
+    status: "INVITED" | "SKIPPED";
+    reason?: string;
+    invitationId?: string;
+    expiresAt?: string;
+    invitationLink?: string;
+    whatsappShareUrl?: string;
+    delivery: {
+      delivered: boolean;
+      channel: "email" | "none";
+      reason?: string;
+    };
+  }>;
+};
+
+export type InvitationPreview = {
+  id: string;
+  invitedEmail: string;
+  role: MemberRole;
+  message: string | null;
+  status: InvitationStatus;
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  group: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  inviter: {
+    name: string;
+  };
 };
 
 export type MemberCandidate = {

@@ -7,18 +7,24 @@ import {
 } from '@nestjs/common';
 import {
   ContributionStatus,
+  GroupInvitationStatus,
   MembershipRole,
   MembershipStatus,
   Prisma,
 } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AddMemberDto } from './dto/add-member.dto';
+import { CreateGroupInvitationsDto } from './dto/create-group-invitations.dto';
 import { CreateGoalMilestoneDto } from './dto/create-goal-milestone.dto';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { CreateSavingsGoalDto } from './dto/create-savings-goal.dto';
+import { ListGroupInvitationsDto } from './dto/list-group-invitations.dto';
 import { UpdateGoalMilestoneDto } from './dto/update-goal-milestone.dto';
 import { UpdateMemberDto } from './dto/update-member.dto';
 import { UpdateSavingsGoalDto } from './dto/update-savings-goal.dto';
+import { InvitationDeliveryService } from './invitation-delivery.service';
 
 type GoalWithMilestones = {
   id: string;
@@ -46,7 +52,11 @@ type GoalWithMilestones = {
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly invitationDeliveryService: InvitationDeliveryService =
+      new InvitationDeliveryService(),
+  ) {}
 
   async createGroup(userId: string, input: CreateGroupDto) {
     const code = input.code ?? (await this.generateUniqueGroupCode());
@@ -176,9 +186,20 @@ export class GroupsService {
       throw new NotFoundException('Group not found');
     }
 
+    const pendingInvitationCount = await this.prisma.groupInvitation.count({
+      where: {
+        groupId,
+        status: GroupInvitationStatus.PENDING,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+    });
+
     return {
       ...group,
       memberCount: group.memberships.length,
+      pendingInvitationCount,
     };
   }
 
@@ -588,6 +609,630 @@ export class GroupsService {
     });
   }
 
+  async createInvitations(
+    userId: string,
+    groupId: string,
+    input: CreateGroupInvitationsDto,
+  ) {
+    await this.ensureGroupManager(userId, groupId);
+    await this.expireStaleInvitations(groupId);
+
+    const group = await this.prisma.savingsGroup.findUnique({
+      where: { id: groupId },
+      select: { id: true, name: true },
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true, email: true },
+    });
+
+    if (!actor) {
+      throw new NotFoundException('Inviter account not found');
+    }
+
+    const normalizedEmails = this.parseAndNormalizeInvitationEmails(input);
+
+    if (normalizedEmails.length === 0) {
+      throw new BadRequestException(
+        'Provide one email or at least one email in the emails list',
+      );
+    }
+
+    if (normalizedEmails.length > 50) {
+      throw new BadRequestException('You can invite up to 50 emails per request');
+    }
+
+    const existingUsers = await this.prisma.user.findMany({
+      where: {
+        email: {
+          in: normalizedEmails,
+        },
+      },
+      select: {
+        id: true,
+        email: true,
+      },
+    });
+
+    const existingUserByEmail = new Map(
+      existingUsers.map((user) => [this.normalizeEmail(user.email), user]),
+    );
+
+    const existingMemberships = await this.prisma.groupMembership.findMany({
+      where: {
+        groupId,
+        userId: {
+          in: existingUsers.map((user) => user.id),
+        },
+      },
+      select: {
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
+    });
+
+    const memberEmailSet = new Set(
+      existingMemberships.map((membership) =>
+        this.normalizeEmail(membership.user.email),
+      ),
+    );
+
+    const existingPendingInvitations = await this.prisma.groupInvitation.findMany({
+      where: {
+        groupId,
+        status: GroupInvitationStatus.PENDING,
+        expiresAt: {
+          gt: new Date(),
+        },
+        invitedEmail: {
+          in: normalizedEmails,
+        },
+      },
+      select: {
+        invitedEmail: true,
+      },
+    });
+
+    const pendingInviteEmailSet = new Set(
+      existingPendingInvitations.map((invitation) => invitation.invitedEmail),
+    );
+
+    const results: Array<{
+      email: string;
+      status: 'INVITED' | 'SKIPPED';
+      reason?: string;
+      invitationId?: string;
+      expiresAt?: Date;
+      invitationLink?: string;
+      whatsappShareUrl?: string;
+      delivery: { delivered: boolean; channel: 'email' | 'none'; reason?: string };
+    }> = [];
+
+    for (const email of normalizedEmails) {
+      if (memberEmailSet.has(email)) {
+        results.push({
+          email,
+          status: 'SKIPPED',
+          reason: 'User is already a group member',
+          delivery: {
+            delivered: false,
+            channel: 'none',
+          },
+        });
+        continue;
+      }
+
+      if (pendingInviteEmailSet.has(email)) {
+        results.push({
+          email,
+          status: 'SKIPPED',
+          reason: 'An active invitation already exists for this email',
+          delivery: {
+            delivered: false,
+            channel: 'none',
+          },
+        });
+        continue;
+      }
+
+      const token = this.generateInvitationToken();
+      const tokenHash = this.hashInvitationToken(token);
+      const expiresAt = this.computeInvitationExpiryDate();
+      const pendingKey = this.pendingInvitationKey(groupId, email);
+      const invitationLink = this.buildInvitationLink(token);
+
+      const invitation = await this.prisma.groupInvitation
+        .create({
+          data: {
+            groupId,
+            invitedById: userId,
+            invitedEmail: email,
+            role: MembershipRole.MEMBER,
+            status: GroupInvitationStatus.PENDING,
+            tokenHash,
+            pendingKey,
+            message: input.message || null,
+            expiresAt,
+            lastSentAt: new Date(),
+          },
+          select: {
+            id: true,
+            expiresAt: true,
+          },
+        })
+        .catch((error) => {
+          if (
+            error instanceof PrismaClientKnownRequestError &&
+            error.code === 'P2002'
+          ) {
+            throw new ConflictException(
+              `An active invitation already exists for ${email}`,
+            );
+          }
+
+          throw error;
+        });
+
+      const delivery = await this.invitationDeliveryService.sendGroupInvitationEmail({
+        toEmail: email,
+        groupName: group.name,
+        inviterName: `${actor.firstName} ${actor.lastName}`.trim(),
+        invitationLink,
+        expiresAt,
+        message: input.message,
+      });
+
+      const whatsappShareUrl = this.buildWhatsAppShareUrl(group.name, invitationLink);
+
+      const existingUser = existingUserByEmail.get(email);
+      if (existingUser) {
+        // Existing users can discover the invitation in-app even when email delivery is unavailable.
+        await this.safeNotifyExistingUser(existingUser.id, group.name, invitation.id);
+      }
+
+      results.push({
+        email,
+        status: 'INVITED',
+        invitationId: invitation.id,
+        expiresAt: invitation.expiresAt,
+        invitationLink,
+        whatsappShareUrl,
+        delivery,
+      });
+    }
+
+    return {
+      groupId,
+      requestedCount: normalizedEmails.length,
+      invitedCount: results.filter((result) => result.status === 'INVITED').length,
+      skippedCount: results.filter((result) => result.status === 'SKIPPED').length,
+      results,
+    };
+  }
+
+  async listInvitations(
+    userId: string,
+    groupId: string,
+    query: ListGroupInvitationsDto,
+  ) {
+    await this.ensureGroupManager(userId, groupId);
+    await this.expireStaleInvitations(groupId);
+
+    const now = new Date();
+
+    const invitations = await this.prisma.groupInvitation.findMany({
+      where: {
+        groupId,
+        ...(query.status
+          ? {
+              ...(query.status === GroupInvitationStatus.EXPIRED
+                ? {
+                    OR: [
+                      {
+                        status: GroupInvitationStatus.EXPIRED,
+                      },
+                      {
+                        status: GroupInvitationStatus.PENDING,
+                        expiresAt: {
+                          lte: now,
+                        },
+                      },
+                    ],
+                  }
+                : {
+                    status: query.status,
+                  }),
+            }
+          : {}),
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        invitedEmail: true,
+        role: true,
+        status: true,
+        message: true,
+        expiresAt: true,
+        acceptedAt: true,
+        revokedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        invitedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        acceptedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return invitations.map((invitation) => ({
+      ...invitation,
+      effectiveStatus: this.effectiveInvitationStatus(
+        invitation.status,
+        invitation.expiresAt,
+      ),
+    }));
+  }
+
+  async revokeInvitation(userId: string, groupId: string, invitationId: string) {
+    await this.ensureGroupManager(userId, groupId);
+    await this.expireStaleInvitations(groupId);
+
+    const invitation = await this.prisma.groupInvitation.findFirst({
+      where: {
+        id: invitationId,
+        groupId,
+      },
+      select: {
+        id: true,
+        status: true,
+        expiresAt: true,
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    if (this.effectiveInvitationStatus(invitation.status, invitation.expiresAt) !== GroupInvitationStatus.PENDING) {
+      throw new ConflictException('Only pending invitations can be revoked');
+    }
+
+    const revokedAt = new Date();
+
+    return this.prisma.groupInvitation.update({
+      where: { id: invitationId },
+      data: {
+        status: GroupInvitationStatus.REVOKED,
+        revokedAt,
+        pendingKey: null,
+      },
+      select: {
+        id: true,
+        status: true,
+        revokedAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async resendInvitation(userId: string, groupId: string, invitationId: string) {
+    await this.ensureGroupManager(userId, groupId);
+    await this.expireStaleInvitations(groupId);
+
+    const invitation = await this.prisma.groupInvitation.findFirst({
+      where: {
+        id: invitationId,
+        groupId,
+      },
+      select: {
+        id: true,
+        invitedEmail: true,
+        message: true,
+        status: true,
+        expiresAt: true,
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    if (this.effectiveInvitationStatus(invitation.status, invitation.expiresAt) !== GroupInvitationStatus.PENDING) {
+      throw new ConflictException('Only pending invitations can be resent');
+    }
+
+    const group = await this.prisma.savingsGroup.findUnique({
+      where: { id: groupId },
+      select: {
+        name: true,
+      },
+    });
+
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    if (!actor) {
+      throw new NotFoundException('Inviter account not found');
+    }
+
+    const token = this.generateInvitationToken();
+    const invitationLink = this.buildInvitationLink(token);
+    const tokenHash = this.hashInvitationToken(token);
+    const expiresAt = this.computeInvitationExpiryDate();
+
+    const updatedInvitation = await this.prisma.groupInvitation.update({
+      where: { id: invitationId },
+      data: {
+        tokenHash,
+        expiresAt,
+        lastSentAt: new Date(),
+      },
+      select: {
+        id: true,
+        invitedEmail: true,
+        expiresAt: true,
+        status: true,
+      },
+    });
+
+    const delivery = await this.invitationDeliveryService.sendGroupInvitationEmail({
+      toEmail: updatedInvitation.invitedEmail,
+      groupName: group.name,
+      inviterName: `${actor.firstName} ${actor.lastName}`.trim(),
+      invitationLink,
+      expiresAt,
+      message: invitation.message,
+    });
+
+    return {
+      ...updatedInvitation,
+      invitationLink,
+      whatsappShareUrl: this.buildWhatsAppShareUrl(group.name, invitationLink),
+      delivery,
+    };
+  }
+
+  async getInvitationByToken(token: string) {
+    if (!token || token.length < 16) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    const tokenHash = this.hashInvitationToken(token);
+    const invitation = await this.prisma.groupInvitation.findUnique({
+      where: {
+        tokenHash,
+      },
+      select: {
+        id: true,
+        invitedEmail: true,
+        role: true,
+        status: true,
+        message: true,
+        expiresAt: true,
+        acceptedAt: true,
+        revokedAt: true,
+        createdAt: true,
+        group: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        invitedBy: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    const effectiveStatus = this.effectiveInvitationStatus(
+      invitation.status,
+      invitation.expiresAt,
+    );
+
+    if (
+      invitation.status === GroupInvitationStatus.PENDING &&
+      effectiveStatus === GroupInvitationStatus.EXPIRED
+    ) {
+      await this.prisma.groupInvitation.update({
+        where: { id: invitation.id },
+        data: {
+          status: GroupInvitationStatus.EXPIRED,
+          pendingKey: null,
+        },
+      });
+    }
+
+    return {
+      id: invitation.id,
+      invitedEmail: invitation.invitedEmail,
+      role: invitation.role,
+      message: invitation.message,
+      status: effectiveStatus,
+      expiresAt: invitation.expiresAt,
+      acceptedAt: invitation.acceptedAt,
+      revokedAt: invitation.revokedAt,
+      createdAt: invitation.createdAt,
+      group: invitation.group,
+      inviter: {
+        name: `${invitation.invitedBy.firstName} ${invitation.invitedBy.lastName}`.trim(),
+      },
+    };
+  }
+
+  async acceptInvitation(token: string, userId: string) {
+    if (!token || token.length < 16) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    const tokenHash = this.hashInvitationToken(token);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      throw new ForbiddenException('Authenticated user account is not active');
+    }
+
+    const normalizedUserEmail = this.normalizeEmail(user.email);
+
+    return this.prisma.$transaction(async (tx) => {
+      const invitation = await tx.groupInvitation.findUnique({
+        where: {
+          tokenHash,
+        },
+        select: {
+          id: true,
+          groupId: true,
+          invitedEmail: true,
+          status: true,
+          expiresAt: true,
+          role: true,
+        },
+      });
+
+      if (!invitation) {
+        throw new NotFoundException('Invitation not found');
+      }
+
+      const effectiveStatus = this.effectiveInvitationStatus(
+        invitation.status,
+        invitation.expiresAt,
+      );
+
+      if (invitation.status === GroupInvitationStatus.PENDING && effectiveStatus === GroupInvitationStatus.EXPIRED) {
+        await tx.groupInvitation.update({
+          where: { id: invitation.id },
+          data: {
+            status: GroupInvitationStatus.EXPIRED,
+            pendingKey: null,
+          },
+        });
+      }
+
+      if (effectiveStatus !== GroupInvitationStatus.PENDING) {
+        throw new ConflictException('Invitation is no longer valid');
+      }
+
+      if (this.normalizeEmail(invitation.invitedEmail) !== normalizedUserEmail) {
+        throw new ForbiddenException(
+          'This invitation is for a different email address',
+        );
+      }
+
+      const existingMembership = await tx.groupMembership.findUnique({
+        where: {
+          userId_groupId: {
+            userId,
+            groupId: invitation.groupId,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+        },
+      });
+
+      if (existingMembership) {
+        throw new ConflictException('You are already a member of this group');
+      }
+
+      const claim = await tx.groupInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: GroupInvitationStatus.PENDING,
+          expiresAt: {
+            gt: new Date(),
+          },
+          acceptedAt: null,
+          revokedAt: null,
+        },
+        data: {
+          status: GroupInvitationStatus.ACCEPTED,
+          acceptedAt: new Date(),
+          acceptedByUserId: userId,
+          pendingKey: null,
+        },
+      });
+
+      if (claim.count !== 1) {
+        throw new ConflictException('Invitation has already been processed');
+      }
+
+      const membership = await tx.groupMembership.create({
+        data: {
+          userId,
+          groupId: invitation.groupId,
+          role: MembershipRole.MEMBER,
+          status: MembershipStatus.PENDING,
+        },
+        select: {
+          id: true,
+          role: true,
+          status: true,
+          createdAt: true,
+          group: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+        },
+      });
+
+      return {
+        invitationId: invitation.id,
+        groupId: invitation.groupId,
+        membership,
+      };
+    });
+  }
+
   async searchMemberCandidates(userId: string, groupId: string, query: string) {
     await this.ensureGroupManager(userId, groupId);
 
@@ -990,6 +1635,113 @@ export class GroupsService {
     }
 
     throw new ConflictException('Unable to generate a unique group code');
+  }
+
+  private parseAndNormalizeInvitationEmails(input: CreateGroupInvitationsDto) {
+    const candidates = [
+      ...(input.email ? [input.email] : []),
+      ...(input.emails ?? []),
+    ];
+
+    const unique = new Set<string>();
+
+    for (const candidate of candidates) {
+      const normalized = this.normalizeEmail(candidate);
+      if (!normalized) {
+        continue;
+      }
+
+      if (!this.isValidEmail(normalized)) {
+        throw new BadRequestException(
+          `Invalid email address: ${candidate}`,
+        );
+      }
+
+      unique.add(normalized);
+    }
+
+    return [...unique];
+  }
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  private isValidEmail(email: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  private generateInvitationToken(): string {
+    return randomBytes(32).toString('base64url');
+  }
+
+  private hashInvitationToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private pendingInvitationKey(groupId: string, invitedEmail: string): string {
+    return `${groupId}:${invitedEmail}`;
+  }
+
+  private computeInvitationExpiryDate(): Date {
+    const rawHours = Number(process.env.GROUP_INVITATION_EXPIRY_HOURS ?? '168');
+    const hours = Number.isFinite(rawHours)
+      ? Math.min(Math.max(rawHours, 1), 24 * 30)
+      : 168;
+
+    return new Date(Date.now() + hours * 60 * 60 * 1000);
+  }
+
+  private effectiveInvitationStatus(
+    status: GroupInvitationStatus,
+    expiresAt: Date,
+  ): GroupInvitationStatus {
+    if (status === GroupInvitationStatus.PENDING && expiresAt <= new Date()) {
+      return GroupInvitationStatus.EXPIRED;
+    }
+
+    return status;
+  }
+
+  private buildInvitationLink(token: string): string {
+    const baseUrl =
+      process.env.GROUP_INVITATION_LINK_BASE_URL?.trim() ||
+      process.env.WEB_APP_BASE_URL?.trim() ||
+      'http://localhost:3000';
+
+    const normalizedBase = baseUrl.replace(/\/+$/, '');
+    return `${normalizedBase}/invite/${token}`;
+  }
+
+  private buildWhatsAppShareUrl(groupName: string, invitationLink: string): string {
+    const message = `You are invited to join ${groupName} on Akiba. Accept here: ${invitationLink}`;
+    return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  }
+
+  private async expireStaleInvitations(groupId?: string) {
+    await this.prisma.groupInvitation.updateMany({
+      where: {
+        ...(groupId ? { groupId } : {}),
+        status: GroupInvitationStatus.PENDING,
+        expiresAt: {
+          lte: new Date(),
+        },
+      },
+      data: {
+        status: GroupInvitationStatus.EXPIRED,
+        pendingKey: null,
+      },
+    });
+  }
+
+  private async safeNotifyExistingUser(
+    _userId: string,
+    _groupName: string,
+    _invitationId: string,
+  ) {
+    // Reserved for future in-app notifications. We intentionally avoid throwing
+    // from invitation creation for optional secondary channels.
+    return;
   }
 
   private randomAlphaNumeric(length: number): string {

@@ -5,6 +5,8 @@ import { useToast } from "../context/toast-context";
 import { groupsApi, usersApi } from "../lib/api";
 import type {
   GroupDetails,
+  GroupInvitation,
+  InvitationStatus,
   MemberCandidate,
   MemberRole,
   MemberStatus,
@@ -36,6 +38,21 @@ function statusClass(status: MemberStatus): string {
   }
 }
 
+function invitationStatusClass(status: InvitationStatus): string {
+  switch (status) {
+    case "PENDING":
+      return "status-pending";
+    case "ACCEPTED":
+      return "status-active";
+    case "REVOKED":
+      return "status-suspended";
+    case "EXPIRED":
+      return "status-left";
+    default:
+      return "";
+  }
+}
+
 function formatJoinedDate(iso: string | null): string | null {
   if (!iso) return null;
   return new Date(iso).toLocaleDateString("en-KE", {
@@ -48,6 +65,7 @@ function formatJoinedDate(iso: string | null): string | null {
 // ─── types ─────────────────────────────────────────────────────────────────
 
 type Membership = GroupDetails["memberships"][number];
+type InvitationLinkMap = Record<string, { invitationLink: string; whatsappShareUrl: string }>;
 
 type ConfirmState = {
   memberId: string;
@@ -65,9 +83,11 @@ export function GroupMembersPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingInvitations, setIsLoadingInvitations] = useState(false);
 
   // Per-member action loading
   const [busyMemberIds, setBusyMemberIds] = useState<Set<string>>(new Set());
+  const [busyInvitationIds, setBusyInvitationIds] = useState<Set<string>>(new Set());
 
   // Add member form
   const [showAddForm, setShowAddForm] = useState(false);
@@ -78,6 +98,16 @@ export function GroupMembersPage() {
   const [addFieldError, setAddFieldError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
+
+  // Invitations
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [bulkEmails, setBulkEmails] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [isSendingInvites, setIsSendingInvites] = useState(false);
+  const [invitationFilter, setInvitationFilter] = useState<"ALL" | InvitationStatus>("ALL");
+  const [invitations, setInvitations] = useState<GroupInvitation[]>([]);
+  const [invitationLinks, setInvitationLinks] = useState<InvitationLinkMap>({});
 
   // Remove confirmation
   const [confirmRemove, setConfirmRemove] = useState<ConfirmState>(null);
@@ -97,8 +127,29 @@ export function GroupMembersPage() {
 
   async function refresh() {
     if (!token || !groupId) return;
-    const result = await groupsApi.getGroupById(token, groupId);
-    setGroup(result);
+    const [groupResult, invitationsResult] = await Promise.all([
+      groupsApi.getGroupById(token, groupId),
+      groupsApi.listInvitations(token, groupId, invitationFilter === "ALL" ? undefined : { status: invitationFilter }),
+    ]);
+
+    setGroup(groupResult);
+    setInvitations(invitationsResult);
+  }
+
+  async function refreshInvitations() {
+    if (!token || !groupId) return;
+
+    setIsLoadingInvitations(true);
+    try {
+      const result = await groupsApi.listInvitations(
+        token,
+        groupId,
+        invitationFilter === "ALL" ? undefined : { status: invitationFilter },
+      );
+      setInvitations(result);
+    } finally {
+      setIsLoadingInvitations(false);
+    }
   }
 
   useEffect(() => {
@@ -110,16 +161,26 @@ export function GroupMembersPage() {
     Promise.all([
       groupsApi.getGroupById(token, groupId),
       usersApi.getMe(token),
+      groupsApi.listInvitations(token, groupId),
     ])
-      .then(([groupData, meData]) => {
+      .then(([groupData, meData, invitationData]) => {
         setGroup(groupData);
         setCurrentUserId(meData.id);
+        setInvitations(invitationData);
       })
       .catch((err: unknown) => {
         setPageError(err instanceof Error ? err.message : "Failed to load members");
       })
       .finally(() => setIsLoading(false));
   }, [groupId, token]);
+
+  useEffect(() => {
+    if (!token || !groupId) {
+      return;
+    }
+
+    void refreshInvitations();
+  }, [groupId, invitationFilter, token]);
 
   // Open add form and focus input
   function openAddForm() {
@@ -199,6 +260,192 @@ export function GroupMembersPage() {
     } finally {
       setIsAdding(false);
     }
+  }
+
+  function parseBulkEmails(value: string) {
+    const split = value
+      .split(/[\n,;\s]+/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    return [...new Set(split)];
+  }
+
+  async function onInviteSingle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !groupId) return;
+
+    const normalizedEmail = inviteEmail.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      setInviteError("Enter an email address to invite.");
+      return;
+    }
+
+    setIsSendingInvites(true);
+    setInviteError(null);
+
+    try {
+      const result = await groupsApi.createInvitations(token, groupId, {
+        email: normalizedEmail,
+        message: inviteMessage.trim() || undefined,
+      });
+
+      const invited = result.results.find((item) => item.status === "INVITED");
+      if (!invited) {
+        setInviteError(result.results[0]?.reason ?? "Unable to create invitation");
+      } else {
+        if (invited.invitationId && invited.invitationLink && invited.whatsappShareUrl) {
+          setInvitationLinks((prev) => ({
+            ...prev,
+            [invited.invitationId as string]: {
+              invitationLink: invited.invitationLink as string,
+              whatsappShareUrl: invited.whatsappShareUrl as string,
+            },
+          }));
+        }
+        showToast("Invitation created", "success");
+        setInviteEmail("");
+      }
+
+      await refresh();
+    } catch (err: unknown) {
+      setInviteError(err instanceof Error ? err.message : "Failed to create invitation");
+    } finally {
+      setIsSendingInvites(false);
+    }
+  }
+
+  async function onInviteBulk(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !groupId) return;
+
+    const emails = parseBulkEmails(bulkEmails);
+
+    if (emails.length === 0) {
+      setInviteError("Enter at least one valid email in the bulk field.");
+      return;
+    }
+
+    if (emails.length > 50) {
+      setInviteError("Bulk invitations support up to 50 email addresses per request.");
+      return;
+    }
+
+    setIsSendingInvites(true);
+    setInviteError(null);
+
+    try {
+      const result = await groupsApi.createInvitations(token, groupId, {
+        emails,
+        message: inviteMessage.trim() || undefined,
+      });
+
+      const nextLinks: InvitationLinkMap = {};
+      for (const row of result.results) {
+        if (row.status === "INVITED" && row.invitationId && row.invitationLink && row.whatsappShareUrl) {
+          nextLinks[row.invitationId] = {
+            invitationLink: row.invitationLink,
+            whatsappShareUrl: row.whatsappShareUrl,
+          };
+        }
+      }
+
+      if (Object.keys(nextLinks).length > 0) {
+        setInvitationLinks((prev) => ({ ...prev, ...nextLinks }));
+      }
+
+      showToast(`Invited ${result.invitedCount} contacts`, "success");
+      if (result.skippedCount > 0) {
+        setInviteError(
+          `${result.skippedCount} invite(s) were skipped due to existing membership or active invitations.`,
+        );
+      } else {
+        setInviteError(null);
+      }
+      setBulkEmails("");
+
+      await refresh();
+    } catch (err: unknown) {
+      setInviteError(err instanceof Error ? err.message : "Failed to create invitations");
+    } finally {
+      setIsSendingInvites(false);
+    }
+  }
+
+  function markInvitationBusy(invitationId: string) {
+    setBusyInvitationIds((prev) => new Set(prev).add(invitationId));
+  }
+
+  function clearInvitationBusy(invitationId: string) {
+    setBusyInvitationIds((prev) => {
+      const next = new Set(prev);
+      next.delete(invitationId);
+      return next;
+    });
+  }
+
+  async function onRevokeInvitation(invitationId: string) {
+    if (!token || !groupId) return;
+
+    markInvitationBusy(invitationId);
+    try {
+      await groupsApi.revokeInvitation(token, groupId, invitationId);
+      showToast("Invitation revoked", "info");
+      await refresh();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to revoke invitation";
+      showToast(message, "error");
+    } finally {
+      clearInvitationBusy(invitationId);
+    }
+  }
+
+  async function onResendInvitation(invitationId: string) {
+    if (!token || !groupId) return;
+
+    markInvitationBusy(invitationId);
+    try {
+      const result = await groupsApi.resendInvitation(token, groupId, invitationId);
+      setInvitationLinks((prev) => ({
+        ...prev,
+        [invitationId]: {
+          invitationLink: result.invitationLink,
+          whatsappShareUrl: result.whatsappShareUrl,
+        },
+      }));
+      showToast("Invitation link regenerated", "success");
+      await refresh();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to resend invitation";
+      showToast(message, "error");
+    } finally {
+      clearInvitationBusy(invitationId);
+    }
+  }
+
+  async function onCopyInvitation(invitationId: string) {
+    const link = invitationLinks[invitationId]?.invitationLink;
+    if (!link) {
+      showToast("Resend this invitation first to generate a fresh share link", "info");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast("Invitation link copied", "success");
+    } catch {
+      showToast("Failed to copy invitation link", "error");
+    }
+  }
+
+  function onShareInvitationWhatsApp(invitationId: string) {
+    const shareUrl = invitationLinks[invitationId]?.whatsappShareUrl;
+    if (!shareUrl) {
+      showToast("Resend this invitation first to generate a share link", "info");
+      return;
+    }
+
+    window.open(shareUrl, "_blank", "noopener,noreferrer");
   }
 
   // ─── update member ────────────────────────────────────────────────────
@@ -288,11 +535,24 @@ export function GroupMembersPage() {
         </div>
 
         {isManager && !showAddForm && (
-          <button type="button" className="button" onClick={openAddForm}>
-            + Add member
-          </button>
+          <div className="members-page-actions">
+            <button type="button" className="button button-secondary" onClick={openAddForm}>
+              + Add existing member
+            </button>
+          </div>
         )}
       </div>
+
+      <section className="members-stats-grid" aria-label="Member and invitation counts">
+        <div className="members-stat-card">
+          <p className="members-stat-label">Current members</p>
+          <p className="members-stat-value">{group?.memberCount ?? members.length}</p>
+        </div>
+        <div className="members-stat-card">
+          <p className="members-stat-label">Pending invitations</p>
+          <p className="members-stat-value">{group?.pendingInvitationCount ?? 0}</p>
+        </div>
+      </section>
 
       {/* Page-level error */}
       {pageError && (
@@ -394,6 +654,166 @@ export function GroupMembersPage() {
               </button>
             </div>
           </form>
+        </section>
+      )}
+
+      {isManager && (
+        <section className="add-member-section" aria-label="Invite members">
+          <h2>Invite members</h2>
+          <p className="add-member-hint">
+            Invite by email. If no email delivery provider is configured, share the generated invite link directly or via WhatsApp.
+          </p>
+
+          <form className="add-member-form" onSubmit={onInviteSingle} noValidate>
+            <div className="add-member-field">
+              <label htmlFor="invite-email">Invite one email</label>
+              <input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="member@example.com"
+                disabled={isSendingInvites}
+              />
+            </div>
+            <div className="add-member-field">
+              <label htmlFor="invite-message">Optional message</label>
+              <input
+                id="invite-message"
+                type="text"
+                value={inviteMessage}
+                onChange={(event) => setInviteMessage(event.target.value)}
+                placeholder="Add a short message"
+                disabled={isSendingInvites}
+                maxLength={500}
+              />
+            </div>
+            <div className="add-member-actions">
+              <button className="button" type="submit" disabled={isSendingInvites || !inviteEmail.trim()}>
+                {isSendingInvites ? "Sending..." : "Send invitation"}
+              </button>
+            </div>
+          </form>
+
+          <form className="add-member-form bulk-invite-form" onSubmit={onInviteBulk} noValidate>
+            <div className="add-member-field">
+              <label htmlFor="bulk-emails">Bulk invites (up to 50)</label>
+              <textarea
+                id="bulk-emails"
+                value={bulkEmails}
+                onChange={(event) => setBulkEmails(event.target.value)}
+                placeholder="one@email.com, two@email.com, ..."
+                disabled={isSendingInvites}
+                rows={4}
+              />
+            </div>
+
+            {inviteError ? (
+              <p className="field-error" role="alert">{inviteError}</p>
+            ) : null}
+
+            <div className="add-member-actions">
+              <button className="button button-secondary" type="submit" disabled={isSendingInvites || !bulkEmails.trim()}>
+                {isSendingInvites ? "Processing..." : "Send bulk invitations"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {isManager && (
+        <section className="members-section" aria-label="Group invitations">
+          <div className="members-section-header">
+            <h2>Invitations</h2>
+            <div className="member-row-actions">
+              <select
+                className="role-select"
+                value={invitationFilter}
+                onChange={(event) =>
+                  setInvitationFilter(event.target.value as "ALL" | InvitationStatus)
+                }
+              >
+                <option value="ALL">All statuses</option>
+                <option value="PENDING">Pending</option>
+                <option value="ACCEPTED">Accepted</option>
+                <option value="EXPIRED">Expired</option>
+                <option value="REVOKED">Revoked</option>
+              </select>
+            </div>
+          </div>
+
+          {isLoadingInvitations ? (
+            <div className="members-empty">
+              <p className="members-empty-heading">Loading invitations...</p>
+            </div>
+          ) : invitations.length === 0 ? (
+            <div className="members-empty">
+              <p className="members-empty-heading">No invitations found</p>
+              <p className="members-empty-body">Create invitations to onboard members by email.</p>
+            </div>
+          ) : (
+            <ul className="members-list-full" role="list">
+              {invitations.map((invitation) => {
+                const busy = busyInvitationIds.has(invitation.id);
+                const canManage = invitation.effectiveStatus === "PENDING";
+
+                return (
+                  <li key={invitation.id} className="member-row">
+                    <div className="member-row-info">
+                      <p className="member-row-name">{invitation.invitedEmail}</p>
+                      <p className="member-row-email">
+                        Created {new Date(invitation.createdAt).toLocaleDateString("en-KE")} · Expires {new Date(invitation.expiresAt).toLocaleDateString("en-KE")}
+                      </p>
+                      <div className="member-row-meta">
+                        <span className="member-role-label">{invitation.role}</span>
+                        <span className="member-role-separator">·</span>
+                        <span className={`member-status-label ${invitationStatusClass(invitation.effectiveStatus)}`}>
+                          {invitation.effectiveStatus}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="member-row-actions">
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={busy}
+                        onClick={() => void onResendInvitation(invitation.id)}
+                      >
+                        Resend
+                      </button>
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={busy}
+                        onClick={() => void onCopyInvitation(invitation.id)}
+                      >
+                        Copy link
+                      </button>
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={busy}
+                        onClick={() => onShareInvitationWhatsApp(invitation.id)}
+                      >
+                        WhatsApp
+                      </button>
+                      {canManage ? (
+                        <button
+                          type="button"
+                          className="action-btn action-btn-remove"
+                          disabled={busy}
+                          onClick={() => void onRevokeInvitation(invitation.id)}
+                        >
+                          Revoke
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
 

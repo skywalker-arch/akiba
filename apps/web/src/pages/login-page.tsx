@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { AkibaLogo } from "../components/akiba-logo";
 import { useAuth } from "../context/auth-context";
 import { authApi } from "../lib/api";
@@ -7,6 +7,7 @@ import { authApi } from "../lib/api";
 export function LoginPage() {
   const { isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -16,7 +17,7 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={searchParams.get("next") || "/dashboard"} replace />;
   }
 
   function validateForm() {
@@ -52,7 +53,7 @@ export function LoginPage() {
     try {
       const result = await authApi.login({ email: email.trim(), password });
       login(result.accessToken);
-      navigate("/dashboard", { replace: true });
+      navigate(searchParams.get("next") || "/dashboard", { replace: true });
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Login failed");
     } finally {
@@ -135,7 +136,7 @@ export function LoginPage() {
         </form>
 
         <p className="auth-switcher">
-          Don&apos;t have an account? <Link to="/register">Create account</Link>
+          Don&apos;t have an account? <Link to={`/register${searchParams.get("next") ? `?next=${encodeURIComponent(searchParams.get("next") as string)}` : ""}`}>Create account</Link>
         </p>
       </div>
     </section>

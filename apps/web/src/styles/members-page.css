@@ -16,6 +16,39 @@
   flex-wrap: wrap;
 }
 
+.members-page-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.members-stats-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.members-stat-card {
+  background: #fff;
+  border: 1px solid #dfe7ee;
+  border-radius: 12px;
+  padding: 0.95rem 1rem;
+}
+
+.members-stat-label {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.members-stat-value {
+  margin: 0.3rem 0 0;
+  color: #0f172a;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
 .members-page-title {
   flex: 1;
 }
@@ -310,6 +343,28 @@
   letter-spacing: 0.02em;
 }
 
+.add-member-field textarea {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #d6e0eb;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.add-member-field textarea:focus {
+  outline: none;
+  border-color: #0369a1;
+  box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.1);
+}
+
+.bulk-invite-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed #dbe6f1;
+}
+
 .add-member-field input:focus {
   outline: none;
   border-color: #0369a1;
@@ -387,6 +442,10 @@
 @media (max-width: 640px) {
   .members-page-header {
     flex-direction: column;
+  }
+
+  .members-stats-grid {
+    grid-template-columns: 1fr;
   }
 
   .member-row {

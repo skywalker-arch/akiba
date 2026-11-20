@@ -1,0 +1,115 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "web-build-check",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"web",
+				"build"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "web-lint-check",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"web",
+				"lint"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api-build-check",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"api",
+				"build"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api-lint-check",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"api",
+				"lint"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api-prisma-generate-check",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"api",
+				"prisma",
+				"generate"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api-prisma-generate-exact",
+			"type": "shell",
+			"command": "pnpm --filter api exec prisma generate",
+			"isBackground": false
+		},
+		{
+			"label": "api-prisma-migrate-dev-add-savings-goals",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"api",
+				"exec",
+				"prisma",
+				"migrate",
+				"dev",
+				"-n",
+				"add_savings_goals"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "git-status-short",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "api-prisma-migrate-dev-add-goal-milestones",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"--filter",
+				"api",
+				"exec",
+				"prisma",
+				"migrate",
+				"dev",
+				"-n",
+				"add_goal_milestones"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "tmp-rmdir-migration-dir",
+			"type": "shell",
+			"command": "rmdir apps/api/prisma/migrations/20261111101500_add_savings_goals && echo removed",
+			"isBackground": false
+		}
+	]
+}
